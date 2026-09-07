@@ -12,3 +12,5 @@ data/external/fresh_rotten_source/
 data/external/apple_freshness/
 data/external/*.zip
 data/external/kaggle*.json
+!models/external/best.pt
+!models/detector/yolo11n.pt
