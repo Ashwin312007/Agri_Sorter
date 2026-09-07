@@ -1,0 +1,10 @@
+# Copy to data/external/data.yaml and adjust the path.
+path: /absolute/path/to/your/yolo_dataset
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: bruise
+  1: rot
+  2: spot
