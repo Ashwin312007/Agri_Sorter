@@ -1,0 +1,21 @@
+[transmitter]
+gpio_chip = "/dev/gpiochip4"     # Pi 5 RP1 south
+gpio_line = 18                    # BCM 18 → PWM0 channel
+frequency_hz = 40000              # 40 kHz ultrasonic
+burst_cycles = 8                  # 8-cycle tone burst
+
+[receiver]
+envelope_threshold = 200          # ADC raw counts above noise floor
+timeout_us = 30000                # Max listen window (≈5 m round-trip)
+
+[adc]
+i2c_bus = 1
+address = 0x48                    # ADS1115 default (ADDR→GND)
+channel = 0                       # AIN0 single-ended
+gain = 1                          # ±4.096 V FSR
+data_rate = 860                   # Max ADS1115 rate (860 SPS)
+
+[camera]
+backend = "auto"                  # auto | picamera2 | opencv
+device_index = 0
+resolution = [1280, 720]
