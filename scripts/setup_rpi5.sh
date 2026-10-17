@@ -89,6 +89,8 @@ APT_PACKAGES=(
     python3-lgpio
     i2c-tools
     python3-smbus
+    build-essential
+    python3-dev
     libgl1-mesa-glx
     libglib2.0-0
 )

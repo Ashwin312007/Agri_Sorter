@@ -6,6 +6,7 @@ pandas>=2.2
 joblib>=1.4
 opencv-python-headless>=4.10.0
 lap>=0.5.12
+lapx>=0.5.5
 
 # Hardware & Sensors
 gpiozero>=2.0.1
