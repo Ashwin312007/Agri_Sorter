@@ -13,11 +13,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
+import cv2
 import numpy as np
 
 from app.hardware.camera import CameraBackend, MockCamera, RealCamera
 from app.hardware.config import load_config
 from app.hardware.pipeline import UltrasonicPipeline
+from app.pi_inference import classify_apple, crop_box, find_class_id
 
 logger = logging.getLogger("conveyor_pipeline")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -85,6 +87,10 @@ class ConveyorCoordinator:
         belt_speed_mps: Optional[float] = None,
         strict_safety: bool = False,
         internal_model_path: Optional[Union[str, Path]] = None,
+        detector_model_path: Optional[Union[str, Path]] = "models/detector/yolo11n.pt",
+        classifier_model_path: Optional[Union[str, Path]] = "models/external/best.pt",
+        headless: bool = False,
+        feed_mock_tracks: bool = False,
     ) -> None:
         """Initialize conveyor coordinator.
 
@@ -95,6 +101,10 @@ class ConveyorCoordinator:
             belt_speed_mps: Alias for speed_override.
             strict_safety: If True, raises ValueError when speed exceeds max safe speed.
             internal_model_path: Optional path to internal classifier joblib model.
+            detector_model_path: Path to YOLO detector model (.pt).
+            classifier_model_path: Path to external visual classifier model (.pt).
+            headless: If True, disables cv2 GUI display windows.
+            feed_mock_tracks: If True, allows bench testing sensors with mock tracks.
         """
         if belt_speed_mps is not None and speed_override is None:
             speed_override = belt_speed_mps
@@ -108,6 +118,10 @@ class ConveyorCoordinator:
 
         self.mock = mock or self.config.get("mock", False)
         self.strict_safety = strict_safety
+        self.headless = headless
+        self.feed_mock_tracks = feed_mock_tracks
+        self.detector_model_path = detector_model_path or "models/detector/yolo11n.pt"
+        self.classifier_model_path = classifier_model_path or "models/external/best.pt"
 
         conveyor_cfg = self.config.get("conveyor", {})
         self.belt_speed_mps = float(
@@ -153,11 +167,38 @@ class ConveyorCoordinator:
         if internal_model_path:
             self._load_internal_model(internal_model_path)
 
+        # Initialize YOLO vision detector and classifier (if not in mock-only mode)
+        self.detector = None
+        self.classifier = None
+        self.apple_class_id = None
+        if not self.mock:
+            self._load_vision_models()
+
         # Spatial tracking queue and track archive
         self.spatial_queue: List[FruitTrack] = []
         self.all_tracks: List[FruitTrack] = []
+        self.items: Dict[int, FruitTrack] = {}
         self._next_track_id = 1
         self._is_started = False
+
+    def _load_vision_models(self) -> None:
+        """Load YOLO detector and classification models."""
+        from ultralytics import YOLO
+
+        det_path = Path(self.detector_model_path)
+        cls_path = Path(self.classifier_model_path)
+
+        if not det_path.is_file():
+            raise FileNotFoundError(f"Detector model not found: {det_path}")
+        if not cls_path.is_file():
+            raise FileNotFoundError(f"Classifier model not found: {cls_path}")
+
+        logger.info("Loading YOLO detector from %s", det_path)
+        self.detector = YOLO(str(det_path))
+        self.apple_class_id = find_class_id(self.detector, "apple")
+
+        logger.info("Loading classifier from %s", cls_path)
+        self.classifier = YOLO(str(cls_path))
 
     def _check_speed_safety(self) -> None:
         """Validate conveyor speed against hardware limits."""
@@ -214,6 +255,11 @@ class ConveyorCoordinator:
             except Exception:
                 pass
             self._is_started = False
+        if not self.headless:
+            try:
+                cv2.destroyAllWindows()
+            except Exception:
+                pass
 
     def close(self) -> None:
         """Alias for stop()."""
@@ -266,6 +312,7 @@ class ConveyorCoordinator:
         self.spatial_queue.append(track)
         if track not in self.all_tracks:
             self.all_tracks.append(track)
+        self.items[track.track_id] = track
         if track.track_id >= self._next_track_id:
             self._next_track_id = track.track_id + 1
         return track
@@ -335,6 +382,62 @@ class ConveyorCoordinator:
             except Exception as exc:
                 logger.debug("Frame capture skipped: %s", exc)
 
+        # Station 0: Live camera detection & tracking
+        if not self.mock and not self.feed_mock_tracks:
+            if frame is not None and self.detector is not None:
+                result = self.detector.track(
+                    frame,
+                    persist=True,
+                    classes=[self.apple_class_id],
+                    imgsz=416,
+                    conf=0.30,
+                    tracker="bytetrack.yaml",
+                    verbose=False,
+                )[0]
+                if result.boxes is not None and result.boxes.id is not None:
+                    boxes = result.boxes.xyxy.cpu().tolist()
+                    track_ids = result.boxes.id.int().cpu().tolist()
+                    for box, track_id in zip(boxes, track_ids):
+                        track_id = int(track_id)
+                        if track_id not in self.items:
+                            crop = crop_box(frame, box)
+                            if crop.size > 0 and self.classifier is not None:
+                                visual_label, visual_conf = classify_apple(self.classifier, crop)
+                            else:
+                                visual_label, visual_conf = "apple", 1.0
+                            new_track = FruitTrack(
+                                track_id=track_id,
+                                entry_time=timestamp,
+                                bbox=tuple(int(v) for v in box),
+                                visual_label=visual_label,
+                                visual_confidence=visual_conf,
+                            )
+                            self.items[track_id] = new_track
+                            self.add_track(new_track)
+                            logger.info(
+                                "Station 0: detected new apple track #%d (%s, conf=%.2f) at %s",
+                                track_id,
+                                visual_label,
+                                visual_conf,
+                                new_track.bbox,
+                            )
+
+                        if not self.headless:
+                            x1, y1, x2, y2 = (int(v) for v in box)
+                            item = self.items.get(track_id)
+                            lbl = item.visual_label if item else "apple"
+                            conf = item.visual_confidence if item else 1.0
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                            cv2.putText(
+                                frame,
+                                f"#{track_id} {lbl} {conf:.0%}",
+                                (x1, max(20, y1 - 8)),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.55,
+                                (0, 255, 0),
+                                2,
+                            )
+
         for track in list(self.spatial_queue):
             t_arrive = self.get_arrival_time(track)
             t_eject = self.get_ejection_time(track)
@@ -363,6 +466,11 @@ class ConveyorCoordinator:
                     track.track_id,
                     track.final_grade,
                 )
+
+        # Visual display
+        if frame is not None and not self.headless:
+            cv2.imshow("Conveyor Vision", frame)
+            cv2.waitKey(1)
 
         return list(self.spatial_queue)
 
@@ -422,6 +530,30 @@ def main() -> None:
         default=None,
         help="Path to trained internal classifier joblib file",
     )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        default=False,
+        help="Run without GUI visual display window (no cv2.imshow)",
+    )
+    parser.add_argument(
+        "--feed-mock-tracks",
+        action="store_true",
+        default=False,
+        help="Feed mock fruit tracks for bench testing real sensors without physical fruit",
+    )
+    parser.add_argument(
+        "--detector-model",
+        type=str,
+        default="models/detector/yolo11n.pt",
+        help="Path to YOLO detector model (.pt)",
+    )
+    parser.add_argument(
+        "--classifier-model",
+        type=str,
+        default="models/external/best.pt",
+        help="Path to external visual classifier model (.pt)",
+    )
     args = parser.parse_args()
 
     coordinator = ConveyorCoordinator(
@@ -430,6 +562,10 @@ def main() -> None:
         speed_override=args.speed,
         strict_safety=args.strict_safety,
         internal_model_path=args.internal_model,
+        detector_model_path=args.detector_model,
+        classifier_model_path=args.classifier_model,
+        headless=args.headless,
+        feed_mock_tracks=args.feed_mock_tracks,
     )
 
     coordinator.start()
@@ -442,8 +578,8 @@ def main() -> None:
         + coordinator.ultrasonic_to_sorter_distance_m
     ) / speed
 
-    # In mock mode, pre-seed representative fruit tracks so full spatial cycle is exercised
-    if args.mock:
+    # In mock mode or feed-mock-tracks mode, pre-seed representative fruit tracks so full spatial cycle is exercised
+    if args.mock or args.feed_mock_tracks:
         # Track 1: Sorter boundary track (pre-measured, arrives at sorter within 0.7s)
         t1 = coordinator.register_fruit(
             bbox=(100, 150, 220, 270),

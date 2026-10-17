@@ -1,9 +1,17 @@
+# Core Vision & ML
 ultralytics>=8.3
 xgboost>=2.1
 scikit-learn>=1.5
 pandas>=2.2
 joblib>=1.4
-opencv-python-headless>=4.10
-picamera2
-gpiozero
+opencv-python-headless>=4.10.0
 lap>=0.5.12
+
+# Hardware & Sensors
+gpiozero>=2.0.1
+adafruit-blinka>=8.30.0
+adafruit-circuitpython-ads1x15>=2.3.0
+
+# Note on Raspberry Pi system-level packages:
+# - picamera2: Installed via APT system package `python3-picamera2` and inherited via virtualenv `--system-site-packages`. (Do NOT install via pip).
+# - gpiod: Provided via APT system package `python3-gpiod` and inherited via `--system-site-packages`.

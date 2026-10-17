@@ -211,3 +211,119 @@ def test_cli_execution_with_csv(tmp_path: Path, monkeypatch):
     with open(csv_file, "r", newline="") as f:
         reader = list(csv.DictReader(f))
         assert len(reader) == 4
+
+
+def test_conveyor_coordinator_vision_init_options():
+    coord = ConveyorCoordinator(
+        mock=True,
+        headless=True,
+        feed_mock_tracks=True,
+        detector_model_path="models/detector/yolo11n.pt",
+        classifier_model_path="models/external/best.pt",
+    )
+    assert coord.mock is True
+    assert coord.headless is True
+    assert coord.feed_mock_tracks is True
+    assert coord.detector is None
+    assert coord.classifier is None
+    assert coord.apple_class_id is None
+    assert coord.items == {}
+
+
+def test_conveyor_step_vision_tracking_integration(monkeypatch):
+    coord = ConveyorCoordinator(mock=True, headless=True, feed_mock_tracks=False)
+    coord.mock = False  # simulate live mode for step()
+
+    # Mock detector and its tracking result
+    mock_box = [10.0, 20.0, 110.0, 120.0]
+    mock_track_id = 42
+
+    mock_boxes = MagicMock()
+    mock_boxes.xyxy.cpu().tolist.return_value = [mock_box]
+    mock_boxes.id.int().cpu().tolist.return_value = [mock_track_id]
+
+    mock_result = MagicMock()
+    mock_result.boxes = mock_boxes
+
+    mock_detector = MagicMock()
+    mock_detector.track.return_value = [mock_result]
+
+    # Mock classifier
+    mock_classifier = MagicMock()
+    mock_cls_result = MagicMock()
+    mock_cls_result.names = {0: "fresh"}
+    mock_cls_result.probs.top1 = 0
+    mock_cls_result.probs.top1conf = 0.94
+    mock_classifier.predict.return_value = [mock_cls_result]
+
+    coord.detector = mock_detector
+    coord.classifier = mock_classifier
+    coord.apple_class_id = 47
+
+    # Create dummy frame
+    import numpy as np
+    dummy_frame = np.zeros((300, 300, 3), dtype=np.uint8)
+
+    # First step: should register new track
+    t0 = 1000.0
+    tracks = coord.step(frame=dummy_frame, timestamp=t0)
+
+    mock_detector.track.assert_called_once()
+    assert mock_track_id in coord.items
+    track = coord.items[mock_track_id]
+    assert track.track_id == 42
+    assert track.entry_time == 1000.0
+    assert track.bbox == (10, 20, 110, 120)
+    assert track.visual_label == "fresh"
+    assert track.visual_confidence == pytest.approx(0.94)
+    assert track in coord.spatial_queue
+
+    # Second step with same track: classifier should not be called again for this track
+    call_count = mock_classifier.predict.call_count
+    coord.step(frame=dummy_frame, timestamp=t0 + 0.1)
+    assert mock_classifier.predict.call_count == call_count
+
+
+def test_conveyor_step_visual_display(monkeypatch):
+    import numpy as np
+    dummy_frame = np.zeros((100, 100, 3), dtype=np.uint8)
+
+    mock_imshow = MagicMock()
+    mock_waitkey = MagicMock()
+    monkeypatch.setattr("cv2.imshow", mock_imshow)
+    monkeypatch.setattr("cv2.waitKey", mock_waitkey)
+
+    # When headless is True: imshow should NOT be called
+    coord_headless = ConveyorCoordinator(mock=True, headless=True)
+    coord_headless.step(frame=dummy_frame, timestamp=1.0)
+    mock_imshow.assert_not_called()
+    mock_waitkey.assert_not_called()
+
+    # When headless is False: imshow and waitKey SHOULD be called
+    coord_gui = ConveyorCoordinator(mock=True, headless=False)
+    coord_gui.step(frame=dummy_frame, timestamp=1.0)
+    mock_imshow.assert_called_once_with("Conveyor Vision", dummy_frame)
+    mock_waitkey.assert_called_once_with(1)
+
+
+def test_cli_flags_headless_and_feed_mock(tmp_path: Path, monkeypatch):
+    csv_file = tmp_path / "cli_headless.csv"
+    test_args = [
+        "conveyor_pipeline.py",
+        "--mock",
+        "--duration",
+        "0.1",
+        "--headless",
+        "--feed-mock-tracks",
+        "--detector-model",
+        "models/detector/yolo11n.pt",
+        "--classifier-model",
+        "models/external/best.pt",
+        "--csv-out",
+        str(csv_file),
+    ]
+    monkeypatch.setattr(sys, "argv", test_args)
+    main()
+
+    assert csv_file.is_file()
+
