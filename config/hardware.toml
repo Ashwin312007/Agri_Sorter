@@ -19,3 +19,12 @@ data_rate = 860                   # Max ADS1115 rate (860 SPS)
 backend = "auto"                  # auto | picamera2 | opencv
 device_index = 0
 resolution = [1280, 720]
+
+[conveyor]
+belt_speed_mps = 0.12                # Recommended: 0.10 - 0.15 m/s
+max_safe_speed_mps = 0.20            # Hard upper speed limit based on ADS1115 sampling rate
+camera_to_ultrasonic_distance_m = 0.30
+ultrasonic_to_sorter_distance_m = 0.25
+sensor_mounting_height_mm = 240      # Transducer must be >= 220 mm to clear <=1.2ms blind zone
+apex_sampling_window_mm = 35         # Measured zone on apple crown
+

@@ -35,6 +35,16 @@ def test_ultrasonic_pipeline_mock_mode():
         assert tof == pytest.approx(4200.0)
         assert amp == 62
 
+        # Conveyor configuration parsed with expected defaults
+        assert "conveyor" in pipeline.config
+        conveyor = pipeline.config["conveyor"]
+        assert conveyor["belt_speed_mps"] == pytest.approx(0.12)
+        assert conveyor["max_safe_speed_mps"] == pytest.approx(0.20)
+        assert conveyor["camera_to_ultrasonic_distance_m"] == pytest.approx(0.30)
+        assert conveyor["ultrasonic_to_sorter_distance_m"] == pytest.approx(0.25)
+        assert conveyor["sensor_mounting_height_mm"] == 240
+        assert conveyor["apex_sampling_window_mm"] == 35
+
 
 def test_run_capture_csv_output(tmp_path: Path):
     csv_file = tmp_path / "test_output.csv"

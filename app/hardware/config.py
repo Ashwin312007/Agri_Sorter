@@ -1,4 +1,4 @@
-"""Hardware configuration loader for ultrasonic and camera subsystems."""
+"""Hardware configuration loader for ultrasonic, camera, and conveyor subsystems."""
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
