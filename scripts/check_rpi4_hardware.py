@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Agri_Sorter Raspberry Pi 5 Hardware & Subsystem Diagnostic Tool.
+"""Agri_Sorter Raspberry Pi 4 Hardware & Subsystem Diagnostic Tool.
 
 This diagnostic tool validates all primary hardware interfaces and ML models
 required for the Agri_Sorter automated fruit sorting pipeline:
-  1. System Platform & Architecture (Raspberry Pi 5 / aarch64 check)
+  1. System Platform & Architecture (Raspberry Pi 4 / aarch64 check)
   2. Camera Subsystem (Picamera2 / OpenCV fallback / MockCamera)
   3. I2C ADS1115 ADC (I2C bus 1 address 0x48 scan & voltage reading)
-  4. RP1 GPIO Transmitter (/dev/gpiochip4 pin 18 40kHz tone burst test)
+  4. BCM2711 GPIO Transmitter (/dev/gpiochip0 pin 18 40kHz tone burst test)
   5. AI Models (yolo11n detector & best.pt classifier dry-run benchmarks)
 
 Supports --mock flag for seamless verification on non-Pi development machines.
@@ -39,7 +39,7 @@ RESET = "\033[0m"
 
 
 class HardwareChecker:
-    """Orchestrates hardware and model checks for Raspberry Pi 5 / Mock environments."""
+    """Orchestrates hardware and model checks for Raspberry Pi 4 / Mock environments."""
 
     def __init__(self, mock: bool = False, verbose: bool = False) -> None:
         self.mock = mock
@@ -48,11 +48,11 @@ class HardwareChecker:
 
     def run_all(self) -> bool:
         """Run all diagnostic checks sequentially."""
-        print(f"\n{CYAN}{BOLD}Starting Agri_Sorter RPi5 Hardware Diagnostic...{RESET}")
+        print(f"\n{CYAN}{BOLD}Starting Agri_Sorter RPi4 Hardware Diagnostic...{RESET}")
         if self.mock:
             print(f"{YELLOW}[NOTE] Running in MOCK mode (Laptop / CI verification){RESET}\n")
         else:
-            print(f"{CYAN}[NOTE] Running in REAL HARDWARE mode (Raspberry Pi 5){RESET}\n")
+            print(f"{CYAN}[NOTE] Running in REAL HARDWARE mode (Raspberry Pi 4){RESET}\n")
 
         self.results["1_system"] = self.check_system()
         self.results["2_camera"] = self.check_camera()
@@ -102,13 +102,13 @@ class HardwareChecker:
 
         # Real hardware checks
         if arch != "aarch64":
-            return False, f"Non-ARM64 CPU: {arch} (RPi 5 requires aarch64)"
+            return False, f"Non-ARM64 CPU: {arch} (RPi 4 supports aarch64 / armv7l)"
 
         if not model_str:
             return False, f"Missing {dt_model_path}; not a recognized Raspberry Pi"
 
-        if "Raspberry Pi 5" not in model_str:
-            return False, f"Unexpected Model: {model_str} (expected Raspberry Pi 5)"
+        if "Raspberry Pi 4" not in model_str:
+            return False, f"Unexpected Model: {model_str} (expected Raspberry Pi 4)"
 
         return True, f"{model_str} | Kernel {kernel} ({arch})"
 
@@ -217,21 +217,21 @@ class HardwareChecker:
             return False, f"ADS1115 read failed on {i2c_dev} (0x48): {exc}"
 
     # --------------------------------------------------------------------------
-    # Check 4: RP1 GPIO Ultrasonic Transmitter
+    # Check 4: BCM2711 GPIO Ultrasonic Transmitter
     # --------------------------------------------------------------------------
     def check_gpio_transmitter(self) -> Tuple[bool, str]:
-        """Check Raspberry Pi 5 RP1 GPIO pin 18 output capability."""
+        """Check Raspberry Pi 4 BCM2711 GPIO pin 18 output capability."""
         if self.mock:
             try:
                 from app.hardware.transmitter import MockTransmitter
 
-                tx = MockTransmitter(gpio_chip="/dev/gpiochip4", gpio_line=18, frequency_hz=40000, burst_cycles=8)
+                tx = MockTransmitter(gpio_chip="/dev/gpiochip0", gpio_line=18, frequency_hz=40000, burst_cycles=8)
                 tx.fire()
                 fired = tx.fired_count
                 tx.close()
 
                 if fired > 0:
-                    return True, "MockTransmitter fired 8 cycles @ 40kHz (RP1 pin 18)"
+                    return True, "MockTransmitter fired 8 cycles @ 40kHz (BCM2711 pin 18)"
                 return False, "MockTransmitter failed to record fire event"
             except Exception as exc:
                 if self.verbose:
@@ -239,10 +239,10 @@ class HardwareChecker:
                     traceback.print_exc()
                 return False, f"MockTransmitter failed: {exc}"
 
-        # Real Hardware GPIO RP1 Check
-        gpio_chip = "/dev/gpiochip4"
+        # Real Hardware GPIO BCM2711 Check
+        gpio_chip = "/dev/gpiochip0"
         if not os.path.exists(gpio_chip):
-            return False, f"{gpio_chip} not found (RP1 GPIO controller unavailable)"
+            return False, f"{gpio_chip} not found (BCM2711 GPIO controller unavailable)"
 
         if not os.access(gpio_chip, os.R_OK | os.W_OK):
             return False, f"Permission denied accessing {gpio_chip} (add user to 'gpio' group)"
@@ -253,7 +253,7 @@ class HardwareChecker:
             tx = RealTransmitter(gpio_chip=gpio_chip, gpio_line=18, frequency_hz=40000, burst_cycles=8)
             tx.fire()
             tx.close()
-            return True, f"RP1 {gpio_chip} pin 18 triggered 40kHz tone burst"
+            return True, f"BCM2711 {gpio_chip} pin 18 triggered 40kHz tone burst"
         except Exception as exc:
             if self.verbose:
                 import traceback
@@ -319,7 +319,7 @@ class HardwareChecker:
             "1_system": "System Platform",
             "2_camera": "Camera Backend",
             "3_i2c_adc": "I2C ADS1115 ADC",
-            "4_gpio_tx": "RP1 GPIO Transmitter",
+            "4_gpio_tx": "BCM2711 GPIO Transmitter",
             "5_models": "AI Models (YOLO11)",
         }
 
@@ -327,12 +327,12 @@ class HardwareChecker:
         total = len(self.results)
         passed_count = sum(1 for passed, _ in self.results.values() if passed)
 
-        mode_str = "MOCK (Laptop Verification)" if self.mock else "REAL HARDWARE (Raspberry Pi 5)"
+        mode_str = "MOCK (Laptop Verification)" if self.mock else "REAL HARDWARE (Raspberry Pi 4)"
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
         width = 86
         print("=" * width)
-        print(f"{'Agri_Sorter RPi5 Hardware Diagnostic Dashboard':^{width}}")
+        print(f"{'Agri_Sorter RPi4 Hardware Diagnostic Dashboard':^{width}}")
         print("=" * width)
         print(f" Execution Mode : {mode_str}")
         print(f" Timestamp      : {timestamp}")
@@ -365,7 +365,7 @@ class HardwareChecker:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Agri_Sorter Raspberry Pi 5 Hardware & ML Diagnostic Utility"
+        description="Agri_Sorter Raspberry Pi 4 Hardware & ML Diagnostic Utility"
     )
     parser.add_argument(
         "--mock",

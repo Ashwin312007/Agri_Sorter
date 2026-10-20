@@ -1,5 +1,5 @@
 [transmitter]
-gpio_chip = "/dev/gpiochip4"     # Pi 5 RP1 south
+gpio_chip = "/dev/gpiochip0"     # Pi 4 BCM2711 — GPIO header on gpiochip0
 gpio_line = 18                    # BCM 18 → PWM0 channel
 frequency_hz = 40000              # 40 kHz ultrasonic
 burst_cycles = 8                  # 8-cycle tone burst

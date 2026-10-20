@@ -1,4 +1,4 @@
-"""Live multi-apple vision for the Raspberry Pi 5.
+"""Live multi-apple vision for the Raspberry Pi 4.
 
 Stage 1 uses a YOLO detector to find and track every apple in a frame.
 Stage 2 runs the trained fresh/rotten classifier on the crop for each tracked apple.

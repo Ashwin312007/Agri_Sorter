@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Agri_Sorter - Raspberry Pi 5 Environment & Hardware Setup Script
+# Agri_Sorter - Raspberry Pi 4 Environment & Hardware Setup Script
 # ==============================================================================
 set -e
 
@@ -33,7 +33,7 @@ log_error() {
 print_header() {
     echo -e "${BLUE}${BOLD}"
     echo "================================================================================"
-    echo "            Agri_Sorter - Raspberry Pi 5 Automated Setup Script                 "
+    echo "            Agri_Sorter - Raspberry Pi 4 Automated Setup Script                 "
     echo "================================================================================"
     echo -e "${NC}"
 }
@@ -64,15 +64,15 @@ fi
 echo -e "  Architecture: ${BOLD}${ARCH}${NC}"
 echo -e "  Device Model: ${BOLD}${DEVICE_MODEL}${NC}"
 
-IS_RPI5=false
-if [[ "$ARCH" == "aarch64" ]] && [[ "$DEVICE_MODEL" =~ "Raspberry Pi 5" ]]; then
-    IS_RPI5=true
-    log_success "Raspberry Pi 5 (aarch64) verified."
+IS_RPI4=false
+if [[ "$ARCH" == "aarch64" || "$ARCH" == "armv7l" ]] && [[ "$DEVICE_MODEL" =~ "Raspberry Pi 4" ]]; then
+    IS_RPI4=true
+    log_success "Raspberry Pi 4 (${ARCH}) verified."
 else
     log_warn "Target platform mismatch!"
     log_warn "Detected Architecture: ${ARCH}, Model: ${DEVICE_MODEL}"
-    log_warn "This script is tailored for Raspberry Pi 5 (aarch64 / Bookworm)."
-    log_warn "Setup will proceed, but some hardware drivers (picamera2, gpiod RP1) may not work natively on this machine."
+    log_warn "This script is tailored for Raspberry Pi 4 (Bookworm / Bullseye)."
+    log_warn "Setup will proceed, but some hardware drivers (picamera2, gpiod) may not work natively on this machine."
 fi
 
 # ------------------------------------------------------------------------------
@@ -223,18 +223,18 @@ fi
 # ------------------------------------------------------------------------------
 echo ""
 echo -e "${GREEN}${BOLD}================================================================================${NC}"
-echo -e "${GREEN}${BOLD}                 Agri_Sorter RPi5 Setup Completed Successfully!                 ${NC}"
+echo -e "${GREEN}${BOLD}                 Agri_Sorter RPi4 Setup Completed Successfully!                 ${NC}"
 echo -e "${GREEN}${BOLD}================================================================================${NC}"
 echo -e "Next steps to verify and start Agri_Sorter:"
 echo ""
 echo -e "  1. Activate virtual environment:"
 echo -e "     ${BOLD}${CYAN}source .venv/bin/activate${NC}"
 echo ""
-echo -e "  2. Run hardware diagnostics (on Raspberry Pi 5):"
-echo -e "     ${BOLD}${CYAN}python scripts/check_rpi5_hardware.py${NC}"
+echo -e "  2. Run hardware diagnostics (on Raspberry Pi 4):"
+echo -e "     ${BOLD}${CYAN}python scripts/check_rpi4_hardware.py${NC}"
 echo ""
 echo -e "  3. If testing on a development PC / Laptop:"
-echo -e "     ${BOLD}${CYAN}python scripts/check_rpi5_hardware.py --mock${NC}"
+echo -e "     ${BOLD}${CYAN}python scripts/check_rpi4_hardware.py --mock${NC}"
 echo ""
 echo -e "  4. (Optional) Run the conveyor pipeline in test mode:"
 echo -e "     ${BOLD}${CYAN}python app/conveyor_pipeline.py --mock${NC}"

@@ -9,10 +9,10 @@ lap>=0.5.12
 lapx>=0.5.5
 
 # Hardware & Sensors
-gpiozero>=2.0.1
+gpiozero>=1.6.2
 adafruit-blinka>=8.30.0
 adafruit-circuitpython-ads1x15>=2.3.0
 
 # Note on Raspberry Pi system-level packages:
 # - picamera2: Installed via APT system package `python3-picamera2` and inherited via virtualenv `--system-site-packages`. (Do NOT install via pip).
-# - gpiod: Provided via APT system package `python3-gpiod` and inherited via `--system-site-packages`.
+# - gpiod: Provided via APT system package `python3-gpiod` (gpiochip0 on Pi 4 BCM2711) and inherited via `--system-site-packages`.

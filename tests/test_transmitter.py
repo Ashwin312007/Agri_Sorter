@@ -4,7 +4,7 @@ from app.hardware.transmitter import BurstTransmitter, MockTransmitter, RealTran
 
 
 def test_mock_transmitter_fire():
-    tx = MockTransmitter(gpio_chip="/dev/gpiochip4", gpio_line=18, frequency_hz=40000, burst_cycles=8)
+    tx = MockTransmitter(gpio_chip="/dev/gpiochip0", gpio_line=18, frequency_hz=40000, burst_cycles=8)
     assert tx.fired_count == 0
     assert tx.last_fired_time is None
 
@@ -26,6 +26,6 @@ def test_mock_transmitter_fire():
 def test_real_transmitter_error_without_hardware():
     # On x86 development machine without gpiod hardware/lines, RealTransmitter raises RuntimeError
     try:
-        RealTransmitter(gpio_chip="/dev/gpiochip4", gpio_line=18)
+        RealTransmitter(gpio_chip="/dev/gpiochip0", gpio_line=18)
     except RuntimeError as exc:
         assert "gpiod" in str(exc).lower() or "failed to request" in str(exc).lower()

@@ -24,11 +24,11 @@ class BurstTransmitter(ABC):
 
 
 class RealTransmitter(BurstTransmitter):
-    """Real GPIO transmitter using gpiod v2 / v1 on Raspberry Pi 5 (RP1 south chip)."""
+    """Real GPIO transmitter using gpiod v2 / v1 on Raspberry Pi 4 (BCM2711)."""
 
     def __init__(
         self,
-        gpio_chip: str = "/dev/gpiochip4",
+        gpio_chip: str = "/dev/gpiochip0",
         gpio_line: int = 18,
         frequency_hz: int = 40000,
         burst_cycles: int = 8,
@@ -36,7 +36,7 @@ class RealTransmitter(BurstTransmitter):
         """Initialize RealTransmitter.
 
         Args:
-            gpio_chip: Path to GPIO chip device (Pi 5 default is /dev/gpiochip4 for RP1).
+            gpio_chip: Path to GPIO chip device (Pi 4 default is /dev/gpiochip0 for BCM2711).
             gpio_line: GPIO line / BCM pin number (e.g. 18).
             frequency_hz: Burst frequency in Hertz (default 40000 Hz).
             burst_cycles: Number of square wave cycles in tone burst (default 8).
@@ -156,7 +156,7 @@ class MockTransmitter(BurstTransmitter):
 
     def __init__(
         self,
-        gpio_chip: str = "/dev/gpiochip4",
+        gpio_chip: str = "/dev/gpiochip0",
         gpio_line: int = 18,
         frequency_hz: int = 40000,
         burst_cycles: int = 8,

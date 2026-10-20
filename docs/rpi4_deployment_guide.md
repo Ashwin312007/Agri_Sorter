@@ -1,15 +1,15 @@
-# Raspberry Pi 5 Live Deployment & Production Runbook
+# Raspberry Pi 4 Live Deployment & Production Runbook
 
 **System:** Agri_Sorter Automated Fruit Inspection & Conveyor Sorter  
-**Target Hardware:** Raspberry Pi 5 (RP1 Southbridge, Broadcom BCM2712, 4GB/8GB)  
-**Primary Interfaces:** CSI-2 (Picamera2 / Camera Module 3), I2C1 (ADS1115 ADC @ 400kHz), RP1 GPIO (Pin 18 40kHz Ultrasonic Transmitter Burst)  
+**Target Hardware:** Raspberry Pi 4 (Broadcom BCM2711, 2GB/4GB/8GB)  
+**Primary Interfaces:** CSI-2 (Picamera2 / Camera Module 3), I2C1 (ADS1115 ADC @ 400kHz), BCM2711 GPIO (Pin 18 40kHz Ultrasonic Transmitter Burst)  
 **Target Event:** Tuesday Live Sorting Demonstration  
 
 ---
 
 ## 1. Quick Start (3 Commands)
 
-Execute these three commands directly from the terminal on the Raspberry Pi 5 to set up dependencies, run pre-flight diagnostics, and launch the real-time sorting pipeline:
+Execute these three commands directly from the terminal on the Raspberry Pi 4 to set up dependencies, run pre-flight diagnostics, and launch the real-time sorting pipeline:
 
 ```bash
 # 1. Clone repository and navigate to project root
@@ -28,14 +28,14 @@ python -m app.conveyor_pipeline --speed 0.12 --headless
 
 ## 2. Hardware Wiring Matrix & Pinout
 
-The Raspberry Pi 5 interfaces with two separate analog/digital subsystems:
-1. **Transmitter Drive**: Direct hardware burst from RP1 GPIO line 18 (Pin 12) through driver stage to the 40 kHz acoustic transducer.
+The Raspberry Pi 4 interfaces with two separate analog/digital subsystems:
+1. **Transmitter Drive**: Direct hardware burst from BCM2711 GPIO line 18 (Pin 12) through driver stage to the 40 kHz acoustic transducer.
 2. **Receiver Conditioning & Digitisation**: Analog echo envelope demodulator (LM741 / BAT54S clamping) sampled via Texas Instruments ADS1115 16-bit ADC over I2C bus 1 at address `0x48`.
 
-### 2.1 Raspberry Pi 5 40-Pin Header Pinout Mapping
+### 2.1 Raspberry Pi 4 40-Pin Header Pinout Mapping
 
 ```text
-                           Raspberry Pi 5 Header
+                           Raspberry Pi 4 Header
                                 3.3V Power [01] [02] 5V Power
              (ADS1115 SDA) BCM 2 (I2C1 SDA) [03] [04] 5V Power
              (ADS1115 SCL) BCM 3 (I2C1 SCL) [05] [06] GND (Star Ground)
@@ -56,13 +56,13 @@ The Raspberry Pi 5 interfaces with two separate analog/digital subsystems:
 
 | Net Name | From (Source Pin) | To (Destination Pin) | Signal Function / Voltage Level |
 | :--- | :--- | :--- | :--- |
-| **I2C_SDA** | Pi 5 Pin 3 (BCM 2) | ADS1115 Pin SDA | I2C Bus 1 Serial Data (3.3V Logic, 400 kHz) |
-| **I2C_SCL** | Pi 5 Pin 5 (BCM 3) | ADS1115 Pin SCL | I2C Bus 1 Serial Clock (3.3V Logic, 400 kHz) |
-| **VDD_3V3** | Pi 5 Pin 1 (3.3V DC) | ADS1115 Pin VDD | Clean 3.3V logic & ADC reference rail |
+| **I2C_SDA** | Pi 4 Pin 3 (BCM 2) | ADS1115 Pin SDA | I2C Bus 1 Serial Data (3.3V Logic, 400 kHz) |
+| **I2C_SCL** | Pi 4 Pin 5 (BCM 3) | ADS1115 Pin SCL | I2C Bus 1 Serial Clock (3.3V Logic, 400 kHz) |
+| **VDD_3V3** | Pi 4 Pin 1 (3.3V DC) | ADS1115 Pin VDD | Clean 3.3V logic & ADC reference rail |
 | **ADDR_GND** | ADS1115 Pin ADDR | ADS1115 Pin GND | Hardwires I2C slave address to `0x48` |
 | **A0_INPUT** | Clamping Diode Node | ADS1115 Pin A0 (AIN0)| Conditioned fruit acoustic envelope (0.0V - 3.3V) |
-| **TX_DRIVE** | Pi 5 Pin 12 (BCM 18) | Transducer TX Driver IN | 8-cycle 40 kHz square wave burst (3.3V logic) |
-| **STAR_GND** | Pi 5 Pin 6 or Pin 9 | Central Bus Star Point | Common star ground reference (Pi, PSU 0V, ADC, TX/RX shields) |
+| **TX_DRIVE** | Pi 4 Pin 12 (BCM 18) | Transducer TX Driver IN | 8-cycle 40 kHz square wave burst (3.3V logic) |
+| **STAR_GND** | Pi 4 Pin 6 or Pin 9 | Central Bus Star Point | Common star ground reference (Pi, PSU 0V, ADC, TX/RX shields) |
 | **AFE_V+** | External PSU +12V | LM741 Pin 7 ($V_{+}$) | Positive op-amp rail for acoustic amplifier |
 | **AFE_V-** | External PSU −12V | LM741 Pin 4 ($V_{-}$) | Negative op-amp rail for acoustic amplifier |
 | **AFE_0V** | External PSU 0V/GND | Central Bus Star Point | Op-amp reference return |
@@ -70,12 +70,12 @@ The Raspberry Pi 5 interfaces with two separate analog/digital subsystems:
 ### 2.3 Common Star Grounding Architecture
 
 > [!CAUTION]
-> **Ground Loop Prevention**: The high-gain acoustic analog front-end (AFE) detects microvolt-level signals from the piezo receiver. If the external $\pm 12\text{V}$ power supply ground, Raspberry Pi logic ground, and ADS1115 ground are connected in a daisy chain, switching return currents from the Raspberry Pi 5 RP1 processor and camera CSI bus will inject $50\text{ Hz} / 100\text{ Hz}$ and switching spikes into the envelope line.
+> **Ground Loop Prevention**: The high-gain acoustic analog front-end (AFE) detects microvolt-level signals from the piezo receiver. If the external $\pm 12\text{V}$ power supply ground, Raspberry Pi logic ground, and ADS1115 ground are connected in a daisy chain, switching return currents from the Raspberry Pi 4 processor and camera CSI bus will inject $50\text{ Hz} / 100\text{ Hz}$ and switching spikes into the envelope line.
 >
 > **Mandatory Rule**: All ground leads must meet at a single physical brass binding post or central terminal strip ("Star Ground"). The shield braid of the receiver transducer coaxial cable must terminate at this star point only.
 
 ```text
-    Pi 5 Pin 6 (Logic GND) ────┐
+    Pi 4 Pin 6 (Logic GND) ────┐
     ADS1115 GND Pin        ────┤
     PSU 0V Rail (Dual Rail)────┼─── [ CENTRAL STAR GROUND POINT ]
     Transducer RX Shield   ────┤
@@ -132,18 +132,18 @@ The critical acoustic evaluation occurs across the fruit apex crown, defined in 
 
 ---
 
-## 4. Critical Pi 5 Hardware Gotchas
+## 4. Critical Pi 4 Hardware Gotchas
 
-The Raspberry Pi 5 introduces substantial architectural changes over the Raspberry Pi 4 that must be observed during deployment:
+The Raspberry Pi 4 introduces substantial architectural changes over the Raspberry Pi 4 that must be observed during deployment:
 
 ### 4.1 22-Pin MIPI CSI-2 Camera Cable Requirement
-* **The Pitfall**: The Raspberry Pi 5 has two 22-pin, 0.5 mm-pitch MIPI connectors (labeled `CAM/DISP 0` and `CAM/DISP 1`). The legacy 15-pin 1.0 mm-pitch ribbon cable from Raspberry Pi 3/4 **does not fit**.
+* **The Pitfall**: The Raspberry Pi 4 has two 22-pin, 0.5 mm-pitch MIPI connectors (labeled `CAM/DISP 0` and `CAM/DISP 1`). The legacy 15-pin 1.0 mm-pitch ribbon cable from Raspberry Pi 3/4 **does not fit**.
 * **The Action**: Use the official 22-pin-to-15-pin Raspberry Pi camera adapter cable or native 22-pin Camera Module 3 cable.
 * **Orientation**: The cable contacts must face **inward towards the USB/Ethernet ports** (metal pads facing the board's circuit traces; plastic stiffener facing the connector locking clip).
 
 ### 4.2 400 kHz Fast-Mode I2C Bus Configuration
 * **The Pitfall**: Standard Raspberry Pi OS defaults the I2C bus to 100 kHz standard mode. Reading the ADS1115 conversion registers and continuously polling flags at 100 kHz saturates the bus and causes scheduling delays.
-* **The Action**: On Debian Bookworm on Pi 5, configuration settings live in `/boot/firmware/config.txt` (not `/boot/config.txt`).  
+* **The Action**: On Debian Bookworm on Pi 4, configuration settings live in `/boot/firmware/config.txt` (not `/boot/config.txt`).  
   Ensure the following lines exist:
   ```ini
   # /boot/firmware/config.txt
@@ -170,11 +170,11 @@ The Raspberry Pi 5 introduces substantial architectural changes over the Raspber
 Before turning on conveyor motors or running live fruit, run the built-in diagnostic utility:
 
 ```bash
-# On live Raspberry Pi 5:
-python scripts/check_rpi5_hardware.py
+# On live Raspberry Pi 4:
+python scripts/check_rpi4_hardware.py
 
 # On developer laptop / bench simulation:
-python scripts/check_rpi5_hardware.py --mock
+python scripts/check_rpi4_hardware.py --mock
 ```
 
 ### Expected Output Dashboard
@@ -183,18 +183,18 @@ When all subsystems are operational, the script produces the following verificat
 
 ```text
 ======================================================================================
-                    Agri_Sorter RPi5 Hardware Diagnostic Dashboard                    
+                    Agri_Sorter RPi4 Hardware Diagnostic Dashboard                    
 ======================================================================================
- Execution Mode : REAL HARDWARE (Raspberry Pi 5)
+ Execution Mode : REAL HARDWARE (Raspberry Pi 4)
  Timestamp      : 2026-10-20 09:15:00
  Repository     : /home/taiki/Documents/Agri_Sorter
 --------------------------------------------------------------------------------------
  #  | Subsystem              | Status | Details                                       
 --------------------------------------------------------------------------------------
- 1  | System Platform        | [PASS] | Raspberry Pi 5 Model B Rev 1.0 (aarch64)      
+ 1  | System Platform        | [PASS] | Raspberry Pi 4 Model B Rev 1.0 (aarch64)      
  2  | Camera Backend         | [PASS] | Picamera2 captured 1280x720 frame             
  3  | I2C ADS1115 ADC        | [PASS] | ADS1115 on /dev/i2c-1 (0x48): raw=12450...   
- 4  | RP1 GPIO Transmitter   | [PASS] | RP1 /dev/gpiochip4 pin 18 triggered 40kHz ... 
+ 4  | BCM2711 GPIO Transmitter   | [PASS] | BCM2711 /dev/gpiochip0 pin 18 triggered 40kHz ... 
  5  | AI Models (YOLO11)     | [PASS] | Det: 15.2ms (yolo11n) | Cls: 3.0ms (best.pt)  
 --------------------------------------------------------------------------------------
  OVERALL STATUS: ALL CHECKS PASSED (5/5)
@@ -235,12 +235,12 @@ python -m app.conveyor_pipeline --mock --duration 5 --csv-out runtime/mock_summa
 
 ## 7. Troubleshooting & FAQ
 
-### Issue 1: `Permission denied: '/dev/gpiochip4'`
-* **Cause**: On the Raspberry Pi 5, the 40-pin GPIO lines are controlled by the RP1 southbridge PCIe chip, mapped as `/dev/gpiochip4`. If the user is not in the `gpio` group or udev rules are missing, accessing the character device fails.
+### Issue 1: `Permission denied: '/dev/gpiochip0'`
+* **Cause**: On the Raspberry Pi 4, the 40-pin GPIO lines are controlled by the BCM2711 southbridge PCIe chip, mapped as `/dev/gpiochip0`. If the user is not in the `gpio` group or udev rules are missing, accessing the character device fails.
 * **Resolution**:
   ```bash
   sudo usermod -aG gpio,i2c,video $USER
-  sudo chmod 660 /dev/gpiochip4
+  sudo chmod 660 /dev/gpiochip0
   ```
   Log out and log back in (or reboot) for group permissions to take effect.
 
@@ -291,6 +291,6 @@ python -m app.conveyor_pipeline --mock --duration 5 --csv-out runtime/mock_summa
 - [ ] **Physical**: Common star ground continuity checked ($< 0.5\ \Omega$ between Pi GND, PSU 0V, ADC GND).
 - [ ] **Cabling**: 22-pin camera cable locked firmly in `CAM/DISP 1` port.
 - [ ] **Power**: Op-amp dual supply energized at $\pm 12\text{V DC}$.
-- [ ] **Software**: Run `python scripts/check_rpi5_hardware.py` $\rightarrow$ Confirm `5/5 PASS`.
+- [ ] **Software**: Run `python scripts/check_rpi4_hardware.py` $\rightarrow$ Confirm `5/5 PASS`.
 - [ ] **Conveyor**: Speed controller dialed to $0.12\text{ m/s}$.
 - [ ] **Launch**: Run `python -m app.conveyor_pipeline --speed 0.12 --headless --csv-out runtime/demo_results.csv`.

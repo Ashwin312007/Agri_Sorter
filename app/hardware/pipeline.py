@@ -39,7 +39,7 @@ class UltrasonicPipeline:
 
         if self.mock:
             self.transmitter: BurstTransmitter = MockTransmitter(
-                gpio_chip=tx_cfg.get("gpio_chip", "/dev/gpiochip4"),
+                gpio_chip=tx_cfg.get("gpio_chip", "/dev/gpiochip0"),
                 gpio_line=tx_cfg.get("gpio_line", 18),
                 frequency_hz=tx_cfg.get("frequency_hz", 40000),
                 burst_cycles=tx_cfg.get("burst_cycles", 8),
@@ -52,7 +52,7 @@ class UltrasonicPipeline:
             )
         else:
             self.transmitter = RealTransmitter(
-                gpio_chip=tx_cfg.get("gpio_chip", "/dev/gpiochip4"),
+                gpio_chip=tx_cfg.get("gpio_chip", "/dev/gpiochip0"),
                 gpio_line=tx_cfg.get("gpio_line", 18),
                 frequency_hz=tx_cfg.get("frequency_hz", 40000),
                 burst_cycles=tx_cfg.get("burst_cycles", 8),

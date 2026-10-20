@@ -1,12 +1,12 @@
 # Edge Fruit Sorter
 
-Raspberry Pi 5 starter system for apple grading.
+Raspberry Pi 4 starter system for apple grading.
 
 ## Architecture
 
 - Multi-fruit external vision: YOLO apple detector plus a per-apple freshness classifier
 - Internal quality: XGBoost model trained from ultrasonic measurements
-- Runtime: Raspberry Pi 5, Picamera2/OpenCV, GPIO break-beam, encoder, and servo
+- Runtime: Raspberry Pi 4, Picamera2/OpenCV, GPIO break-beam, encoder, and servo
 
 Training happens on a laptop or Colab. The Pi performs inference only.
 

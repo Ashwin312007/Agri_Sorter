@@ -1,6 +1,6 @@
 # Ultrasonic Hardware Integration & Interfacing Guide
 
-This document details the hardware architecture, wiring connections, bill of materials (BOM), electrical safety analysis, and operating procedures for integrating 40 kHz ultrasonic transducers with the Raspberry Pi 5.
+This document details the hardware architecture, wiring connections, bill of materials (BOM), electrical safety analysis, and operating procedures for integrating 40 kHz ultrasonic transducers with the Raspberry Pi 4.
 
 ---
 
@@ -10,7 +10,7 @@ The ultrasonic subsystem measures the internal density, texture, and structural 
 
 ```mermaid
 flowchart LR
-    subgraph Pi5["Raspberry Pi 5"]
+    subgraph Pi4["Raspberry Pi 4"]
         GPIO18["GPIO18 (BCM)\n40 kHz Burst"]
         I2C1["I2C1 (SDA/SCL)\nGPIO2 / GPIO3"]
         APP["app/ultrasonic_capture.py\nPipeline Driver"]
@@ -50,12 +50,12 @@ flowchart LR
 
 ## 2. Complete Wiring Table
 
-All connections between the Raspberry Pi 5 (40-pin header), transducers, op-amp conditioning stages, and the ADS1115 ADC breakout are tabulated below:
+All connections between the Raspberry Pi 4 (40-pin header), transducers, op-amp conditioning stages, and the ADS1115 ADC breakout are tabulated below:
 
 | Net Name | From (Source) | To (Destination) | Function / Description |
 | :--- | :--- | :--- | :--- |
-| **TX_DRIVE** | Pi Pin 12 (BCM GPIO18) | Transducer TX+ (GU16D01L01-A27) | 3.3V logic-level 40 kHz burst drive |
-| **TX_GND** | Pi Pin 6, 9, 14, or 20 (GND) | Transducer TX− | Transducer return ground |
+| **TX_DRIVE** | Pi 4 Pin 12 (BCM GPIO18) | Transducer TX+ (GU16D01L01-A27) | 3.3V logic-level 40 kHz burst drive |
+| **TX_GND** | Pi 4 Pin 6, 9, 14, or 20 (GND) | Transducer TX− | Transducer return ground |
 | **RX_SIG** | Transducer RX+ (GU16D01L01-A27) | U1 (LM741) Pin 3 (Non-inverting input) | Weak acoustic echo voltage signal |
 | **RX_GND** | Transducer RX− | Common Analog Ground (GND) | Shielded return ground |
 | **AMP_V+** | PSU +12V Terminal | U1, U2 (LM741) Pin 7 (V+) | Positive dual supply rail for op-amps |
@@ -63,10 +63,10 @@ All connections between the Raspberry Pi 5 (40-pin header), transducers, op-amp 
 | **AMP_GND**| PSU 0V / Common Ground | Pi Header GND & ADC GND | Common star ground point |
 | **AMP_OUT**| U2 (LM741) Pin 6 (Output) | R_LIMIT (1 kΩ) series resistor | Conditioned analog envelope signal |
 | **CLAMPED**| R_LIMIT output / Clamping node | U3 (ADS1115) Pin AIN0 | Over-voltage protected ADC input |
-| **I2C_SDA** | Pi Pin 3 (BCM GPIO2 / I2C1 SDA)| U3 (ADS1115) Pin SDA | 3.3V I2C serial data line (on-board pull-up) |
-| **I2C_SCL** | Pi Pin 5 (BCM GPIO3 / I2C1 SCL)| U3 (ADS1115) Pin SCL | 3.3V I2C serial clock line (on-board pull-up) |
-| **ADC_VDD** | Pi Pin 1 or 17 (3.3V Power) | U3 (ADS1115) Pin VDD | 3.3V DC digital and analog reference power |
-| **ADC_GND** | Pi Pin 9 or 25 (GND) | U3 (ADS1115) Pin GND | Ground reference |
+| **I2C_SDA** | Pi 4 Pin 3 (BCM GPIO2 / I2C1 SDA)| U3 (ADS1115) Pin SDA | 3.3V I2C serial data line (on-board pull-up) |
+| **I2C_SCL** | Pi 4 Pin 5 (BCM GPIO3 / I2C1 SCL)| U3 (ADS1115) Pin SCL | 3.3V I2C serial clock line (on-board pull-up) |
+| **ADC_VDD** | Pi 4 Pin 1 or 17 (3.3V Power) | U3 (ADS1115) Pin VDD | 3.3V DC digital and analog reference power |
+| **ADC_GND** | Pi 4 Pin 9 or 25 (GND) | U3 (ADS1115) Pin GND | Ground reference |
 | **ADC_ADDR**| U3 (ADS1115) Pin ADDR | U3 (ADS1115) Pin GND | Ties address to 0x48 (default) |
 
 ---
@@ -178,7 +178,7 @@ python3 -m app.ultrasonic_capture --mock --count 100 \
     --csv-out data/internal/measurements.csv
 ```
 
-### Raspberry Pi 5 Target Deployment (Live Hardware)
+### Raspberry Pi 4 Target Deployment (Live Hardware)
 ```bash
 # 1. Ensure required system packages and permissions
 sudo apt-get install -y python3-gpiod i2c-tools
