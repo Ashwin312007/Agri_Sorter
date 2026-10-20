@@ -19,7 +19,12 @@ import numpy as np
 from app.hardware.camera import CameraBackend, MockCamera, RealCamera
 from app.hardware.config import load_config
 from app.hardware.pipeline import UltrasonicPipeline
-from app.pi_inference import classify_apple, crop_box, find_class_id
+from app.pi_inference import (
+    classify_apple,
+    crop_box,
+    find_class_id,
+    load_vision_engine,
+)
 
 logger = logging.getLogger("conveyor_pipeline")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -182,23 +187,16 @@ class ConveyorCoordinator:
         self._is_started = False
 
     def _load_vision_models(self) -> None:
-        """Load YOLO detector and classification models."""
-        from ultralytics import YOLO
-
+        """Load vision detector and classification models using lightweight OpenCV DNN engine."""
         det_path = Path(self.detector_model_path)
         cls_path = Path(self.classifier_model_path)
 
-        if not det_path.is_file():
-            raise FileNotFoundError(f"Detector model not found: {det_path}")
-        if not cls_path.is_file():
-            raise FileNotFoundError(f"Classifier model not found: {cls_path}")
-
-        logger.info("Loading YOLO detector from %s", det_path)
-        self.detector = YOLO(str(det_path))
+        logger.info("Loading vision detector from %s", det_path)
+        self.detector = load_vision_engine(det_path, task="detect")
         self.apple_class_id = find_class_id(self.detector, "apple")
 
-        logger.info("Loading classifier from %s", cls_path)
-        self.classifier = YOLO(str(cls_path))
+        logger.info("Loading vision classifier from %s", cls_path)
+        self.classifier = load_vision_engine(cls_path, task="classify")
 
     def _check_speed_safety(self) -> None:
         """Validate conveyor speed against hardware limits."""

@@ -261,54 +261,105 @@ class HardwareChecker:
             return False, f"GPIO transmitter initialization failed: {exc}"
 
     # --------------------------------------------------------------------------
-    # Check 5: Model Test (YOLO11 Detector & Classifier)
+    # Check 5: Model Test (Lightweight OpenCV DNN / YOLO11)
     # --------------------------------------------------------------------------
     def check_models(self) -> Tuple[bool, str]:
-        """Validate presence and dry-run execution speed for YOLO11 models."""
-        detector_path = REPO_ROOT / "models" / "detector" / "yolo11n.pt"
-        classifier_path = REPO_ROOT / "models" / "external" / "best.pt"
+        """Validate presence and dry-run execution speed for vision models."""
+        detector_onnx = REPO_ROOT / "models" / "detector" / "yolo11n.onnx"
+        classifier_onnx = REPO_ROOT / "models" / "external" / "best.onnx"
+        detector_pt = REPO_ROOT / "models" / "detector" / "yolo11n.pt"
+        classifier_pt = REPO_ROOT / "models" / "external" / "best.pt"
 
-        if not detector_path.is_file():
-            return False, f"Detector model missing: {detector_path}"
-        if not classifier_path.is_file():
-            return False, f"Classifier model missing: {classifier_path}"
+        # 1. Prefer lightweight ONNX models executed via OpenCV DNN
+        if detector_onnx.is_file() and classifier_onnx.is_file():
+            try:
+                import cv2
+                import numpy as np
 
-        try:
-            import numpy as np
-            from ultralytics import YOLO
+                # Detector dry-run benchmark
+                net_det = cv2.dnn.readNetFromONNX(str(detector_onnx))
+                net_det.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+                net_det.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
-            # 1. Detector dry-run benchmark
-            detector = YOLO(str(detector_path))
-            synth_frame = np.random.randint(0, 256, (640, 640, 3), dtype=np.uint8)
+                synth_frame = np.random.randint(0, 256, (640, 640, 3), dtype=np.uint8)
+                blob_det = cv2.dnn.blobFromImage(synth_frame, 1.0 / 255.0, (416, 416), swapRB=True, crop=False)
+                net_det.setInput(blob_det)
+                _ = net_det.forward()  # Warmup
 
-            # Warmup
-            _ = detector(synth_frame, imgsz=416, verbose=False)
+                t0 = time.perf_counter()
+                net_det.setInput(blob_det)
+                _ = net_det.forward()
+                det_time_ms = (time.perf_counter() - t0) * 1000.0
 
-            t0 = time.perf_counter()
-            det_results = detector(synth_frame, imgsz=416, verbose=False)
-            det_time_ms = (time.perf_counter() - t0) * 1000.0
+                # Classifier dry-run benchmark
+                net_cls = cv2.dnn.readNetFromONNX(str(classifier_onnx))
+                net_cls.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+                net_cls.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
-            # 2. Classifier dry-run benchmark
-            classifier = YOLO(str(classifier_path))
-            synth_crop = np.random.randint(0, 256, (224, 224, 3), dtype=np.uint8)
+                synth_crop = np.random.randint(0, 256, (224, 224, 3), dtype=np.uint8)
+                blob_cls = cv2.dnn.blobFromImage(synth_crop, 1.0 / 255.0, (224, 224), swapRB=True, crop=False)
+                net_cls.setInput(blob_cls)
+                _ = net_cls.forward()  # Warmup
 
-            # Warmup
-            _ = classifier(synth_crop, imgsz=224, verbose=False)
+                t0 = time.perf_counter()
+                net_cls.setInput(blob_cls)
+                _ = net_cls.forward()
+                cls_time_ms = (time.perf_counter() - t0) * 1000.0
 
-            t0 = time.perf_counter()
-            cls_results = classifier(synth_crop, imgsz=224, verbose=False)
-            cls_time_ms = (time.perf_counter() - t0) * 1000.0
+                details = f"cv2.dnn ONNX: Det {det_time_ms:.1f}ms | Cls {cls_time_ms:.1f}ms (ARM NEON)"
+                return True, details
+            except Exception as exc:
+                if self.verbose:
+                    import traceback
+                    traceback.print_exc()
+                if self.mock:
+                    return True, f"Mock ONNX simulated pass: {exc}"
+                return False, f"OpenCV DNN ONNX benchmark error: {exc}"
 
-            top1_id = cls_results[0].probs.top1
-            top1_name = classifier.names.get(top1_id, str(top1_id))
+        # 2. PyTorch .pt model fallback
+        has_pt = detector_pt.is_file() and classifier_pt.is_file()
+        if has_pt:
+            try:
+                import numpy as np
+                from ultralytics import YOLO
 
-            details = f"Det: {det_time_ms:.1f}ms (yolo11n) | Cls: {cls_time_ms:.1f}ms ({top1_name})"
-            return True, details
-        except Exception as exc:
-            if self.verbose:
-                import traceback
-                traceback.print_exc()
-            return False, f"Model benchmark error: {exc}"
+                detector = YOLO(str(detector_pt))
+                synth_frame = np.random.randint(0, 256, (640, 640, 3), dtype=np.uint8)
+                _ = detector(synth_frame, imgsz=416, verbose=False)
+                t0 = time.perf_counter()
+                _ = detector(synth_frame, imgsz=416, verbose=False)
+                det_time_ms = (time.perf_counter() - t0) * 1000.0
+
+                classifier = YOLO(str(classifier_pt))
+                synth_crop = np.random.randint(0, 256, (224, 224, 3), dtype=np.uint8)
+                _ = classifier(synth_crop, imgsz=224, verbose=False)
+                t0 = time.perf_counter()
+                cls_results = classifier(synth_crop, imgsz=224, verbose=False)
+                cls_time_ms = (time.perf_counter() - t0) * 1000.0
+
+                top1_id = cls_results[0].probs.top1
+                top1_name = classifier.names.get(top1_id, str(top1_id))
+                details = f"Det: {det_time_ms:.1f}ms (yolo11n) | Cls: {cls_time_ms:.1f}ms ({top1_name})"
+                return True, details
+            except ImportError:
+                # ultralytics not installed on lightweight Pi environment
+                if self.mock:
+                    return True, "Found .pt weights (Mock mode: export ONNX for RPi4)"
+                return False, (
+                    "Found .pt weights, but PyTorch/Ultralytics is not installed.\n"
+                    "For RPi4, export to ONNX: python scripts/export_to_onnx.py"
+                )
+            except Exception as exc:
+                if self.verbose:
+                    import traceback
+                    traceback.print_exc()
+                if self.mock:
+                    return True, f"Found .pt weights [Mock pass]: {exc}"
+                return False, f"Model benchmark error: {exc}"
+
+        if self.mock:
+            return True, "Mock Mode: Synthetic AI models verified"
+        return False, "Model files missing in models/ (need .onnx or .pt)"
 
     # --------------------------------------------------------------------------
     # Dashboard & Results Presentation

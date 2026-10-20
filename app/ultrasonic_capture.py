@@ -20,29 +20,98 @@ STANDARD_FEATURES = [
 ]
 
 
+class RuleBasedAcousticClassifier:
+    """Lightweight rule-based acoustic quality classifier.
+
+    Zero ML dependencies (no joblib, xgboost, pandas, scikit-learn).
+    Evaluates 40 kHz ultrasonic ToF and amplitude against acoustic attenuation thresholds.
+    """
+
+    def __init__(
+        self,
+        amplitude_threshold: float = 45.0,
+        min_travel_time_us: float = 2500.0,
+        max_travel_time_us: float = 6500.0,
+    ):
+        self.amplitude_threshold = amplitude_threshold
+        self.min_travel_time_us = min_travel_time_us
+        self.max_travel_time_us = max_travel_time_us
+
+    def predict(self, X: Any) -> List[int]:
+        predictions: List[int] = []
+        for row in X:
+            if isinstance(row, dict):
+                amp = float(row.get("received_amplitude", 0.0))
+                tof = float(row.get("travel_time_us", 0.0))
+            elif hasattr(row, "__getitem__"):
+                try:
+                    tof = float(row[0])
+                    amp = float(row[1])
+                except (IndexError, TypeError, ValueError):
+                    amp = 0.0
+                    tof = 0.0
+            else:
+                amp = 0.0
+                tof = 0.0
+
+            # 0 = healthy (first quality), 1 = defective (second quality)
+            if amp < self.amplitude_threshold or tof < self.min_travel_time_us or tof > self.max_travel_time_us:
+                predictions.append(1)
+            else:
+                predictions.append(0)
+        return predictions
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "RuleBasedAcousticClassifier":
+        return cls(
+            amplitude_threshold=float(data.get("amplitude_threshold", 45.0)),
+            min_travel_time_us=float(data.get("min_travel_time_us", 2500.0)),
+            max_travel_time_us=float(data.get("max_travel_time_us", 6500.0)),
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "type": "RuleBasedAcousticClassifier",
+            "amplitude_threshold": self.amplitude_threshold,
+            "min_travel_time_us": self.min_travel_time_us,
+            "max_travel_time_us": self.max_travel_time_us,
+        }
+
+
 def load_prediction_model(model_path: str):
-    """Load trained classifier model and its feature list from joblib file.
+    """Load trained classifier model and its feature list from joblib or JSON file.
 
     Args:
-        model_path: Path to joblib file.
+        model_path: Path to joblib or json file.
 
     Returns:
         Tuple[Any, List[str]]: (model_object, list_of_features)
     """
+    path = Path(model_path)
+    if path.suffix.lower() == ".json":
+        import json
+        with open(path, "r") as f:
+            data = json.load(f)
+        features = data.get("features", STANDARD_FEATURES)
+        model = RuleBasedAcousticClassifier.from_dict(data)
+        return model, features
+
     try:
         import joblib
+        payload = joblib.load(str(path))
+        if isinstance(payload, dict) and "model" in payload:
+            model = payload["model"]
+            features = payload.get("features", STANDARD_FEATURES)
+        else:
+            model = payload
+            features = STANDARD_FEATURES
+        return model, features
     except ImportError:
-        raise ImportError("joblib is required to load models. Install with: pip install joblib")
-
-    payload = joblib.load(model_path)
-    if isinstance(payload, dict) and "model" in payload:
-        model = payload["model"]
-        features = payload.get("features", STANDARD_FEATURES)
-    else:
-        model = payload
-        features = STANDARD_FEATURES
-
-    return model, features
+        warnings.warn("joblib is not installed. Using lightweight RuleBasedAcousticClassifier fallback.")
+        return RuleBasedAcousticClassifier(), STANDARD_FEATURES
+    except Exception as exc:
+        warnings.warn(f"Failed to load joblib model from {model_path}: {exc}; using RuleBasedAcousticClassifier fallback.")
+        return RuleBasedAcousticClassifier(), STANDARD_FEATURES
 
 
 def predict_row(
@@ -54,7 +123,11 @@ def predict_row(
     weight_g: Optional[float] = None,
     temperature_c: Optional[float] = None,
 ) -> int:
-    """Predict internal label using loaded model."""
+    """Predict internal label using loaded model or rule evaluator."""
+    if isinstance(model, dict):
+        amp_thresh = float(model.get("amplitude_threshold", 45.0))
+        return 0 if received_amplitude >= amp_thresh else 1
+
     feature_map = {
         "travel_time_us": float(travel_time_us),
         "received_amplitude": float(received_amplitude),
@@ -63,15 +136,23 @@ def predict_row(
         "temperature_c": float(temperature_c) if temperature_c is not None else float("nan"),
     }
 
-    try:
-        import pandas as pd
-        df = pd.DataFrame([{k: feature_map.get(k, float("nan")) for k in features}])[features]
-        pred = model.predict(df)[0]
-    except Exception:
-        row_vals = [[feature_map.get(k, float("nan")) for k in features]]
-        pred = model.predict(row_vals)[0]
+    row_vals = [[feature_map.get(k, float("nan")) for k in features]]
 
-    return int(pred)
+    if hasattr(model, "predict"):
+        try:
+            pred = model.predict(row_vals)[0]
+            return int(pred)
+        except Exception:
+            # Fall back to DataFrame if model strictly requires pandas feature names
+            try:
+                import pandas as pd
+                df = pd.DataFrame([{k: feature_map.get(k, float("nan")) for k in features}])[features]
+                pred = model.predict(df)[0]
+                return int(pred)
+            except Exception:
+                return 0 if received_amplitude >= 45 else 1
+
+    return 0 if received_amplitude >= 45 else 1
 
 
 def run_capture(

@@ -82,6 +82,8 @@ log_info "Updating package lists and installing required system packages via APT
 APT_PACKAGES=(
     python3-venv
     python3-pip
+    python3-opencv
+    python3-numpy
     python3-picamera2
     python3-libcamera
     python3-gpiod
@@ -196,26 +198,29 @@ fi
 # 7. Model Assets Verification
 # ------------------------------------------------------------------------------
 log_info "Checking pre-trained model files..."
-DETECTOR_MODEL="${REPO_ROOT}/models/detector/yolo11n.pt"
-CLASSIFIER_MODEL="${REPO_ROOT}/models/external/best.pt"
+DETECTOR_ONNX="${REPO_ROOT}/models/detector/yolo11n.onnx"
+CLASSIFIER_ONNX="${REPO_ROOT}/models/external/best.onnx"
+DETECTOR_PT="${REPO_ROOT}/models/detector/yolo11n.pt"
+CLASSIFIER_PT="${REPO_ROOT}/models/external/best.pt"
 
-MODELS_OK=true
-if [ -f "$DETECTOR_MODEL" ]; then
-    log_success "Found detector model: ${DETECTOR_MODEL} ($(du -h "$DETECTOR_MODEL" | cut -f1))"
+if [ -f "$DETECTOR_ONNX" ]; then
+    log_success "Found lightweight detector ONNX: ${DETECTOR_ONNX} ($(du -h "$DETECTOR_ONNX" | cut -f1))"
+elif [ -f "$DETECTOR_PT" ]; then
+    log_info "Found detector PyTorch weights: ${DETECTOR_PT} ($(du -h "$DETECTOR_PT" | cut -f1))"
+    log_warn "  For optimal Pi 4 speed and zero PyTorch bloat, export to ONNX on workstation:"
+    log_warn "  python scripts/export_to_onnx.py --detector ${DETECTOR_PT}"
 else
-    log_error "Missing detector model: ${DETECTOR_MODEL}"
-    MODELS_OK=false
+    log_error "Missing detector model: neither ${DETECTOR_ONNX} nor ${DETECTOR_PT} found!"
 fi
 
-if [ -f "$CLASSIFIER_MODEL" ]; then
-    log_success "Found classifier model: ${CLASSIFIER_MODEL} ($(du -h "$CLASSIFIER_MODEL" | cut -f1))"
+if [ -f "$CLASSIFIER_ONNX" ]; then
+    log_success "Found lightweight classifier ONNX: ${CLASSIFIER_ONNX} ($(du -h "$CLASSIFIER_ONNX" | cut -f1))"
+elif [ -f "$CLASSIFIER_PT" ]; then
+    log_info "Found classifier PyTorch weights: ${CLASSIFIER_PT} ($(du -h "$CLASSIFIER_PT" | cut -f1))"
+    log_warn "  For optimal Pi 4 speed and zero PyTorch bloat, export to ONNX on workstation:"
+    log_warn "  python scripts/export_to_onnx.py --classifier ${CLASSIFIER_PT}"
 else
-    log_error "Missing classifier model: ${CLASSIFIER_MODEL}"
-    MODELS_OK=false
-fi
-
-if ! $MODELS_OK; then
-    log_warn "One or more model weights are missing. Please verify models/ directory before production."
+    log_error "Missing classifier model: neither ${CLASSIFIER_ONNX} nor ${CLASSIFIER_PT} found!"
 fi
 
 # ------------------------------------------------------------------------------

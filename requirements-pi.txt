@@ -1,18 +1,21 @@
-# Core Vision & ML
-ultralytics>=8.3
-xgboost>=2.1
-scikit-learn>=1.5
-pandas>=2.2
-joblib>=1.4
-opencv-python-headless>=4.10.0
-lap>=0.5.12
-lapx>=0.5.5
+# ==============================================================================
+# Agri_Sorter - Raspberry Pi 4 Minimal Pip Requirements (< 15 MB)
+# ==============================================================================
+# Designed for lightweight deployment on Raspberry Pi OS (Bookworm / Bullseye)
+# with zero PyTorch bloatware, protecting SD card storage and memory bandwidth.
+#
+# SYSTEM APT PACKAGES (Inherited via venv --system-site-packages):
+# The following performant, C/ARM-NEON optimized libraries MUST be installed
+# via Debian/Raspberry Pi OS APT packages rather than pip:
+#   - python3-opencv     : OpenCV with cv2.dnn ARM NEON vector acceleration
+#   - python3-numpy      : System-optimized NumPy binary
+#   - python3-picamera2  : Native Raspberry Pi Camera Module libcamera interface
+#   - python3-gpiod      : Linux Character Device GPIO (/dev/gpiochip0)
+#   - python3-smbus      : System I2C bus tools
+# (Run scripts/setup_rpi4.sh to automatically install all system APT packages)
+# ==============================================================================
 
-# Hardware & Sensors
+# Hardware & Sensors (Pure-Python / Lightweight Wheels)
 gpiozero>=1.6.2
 adafruit-blinka>=8.30.0
 adafruit-circuitpython-ads1x15>=2.3.0
-
-# Note on Raspberry Pi system-level packages:
-# - picamera2: Installed via APT system package `python3-picamera2` and inherited via virtualenv `--system-site-packages`. (Do NOT install via pip).
-# - gpiod: Provided via APT system package `python3-gpiod` (gpiochip0 on Pi 4 BCM2711) and inherited via `--system-site-packages`.
