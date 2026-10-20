@@ -1,7 +1,12 @@
 """Camera backend interfaces and implementations for Picamera2, OpenCV, and Mocking."""
+import queue
+import threading
+import time
 from abc import ABC, abstractmethod
 from typing import Optional, Sequence, Tuple, Union
 import numpy as np
+
+__all__ = ["CameraBackend", "RealCamera", "MockCamera", "ThreadedCamera"]
 
 
 class CameraBackend(ABC):
@@ -35,6 +40,7 @@ class RealCamera(CameraBackend):
         backend: str = "auto",
         device_index: int = 0,
         resolution: Union[Sequence[int], Tuple[int, int]] = (1280, 720),
+        threaded: bool = False,
     ) -> None:
         """Initialize RealCamera backend.
 
@@ -42,10 +48,12 @@ class RealCamera(CameraBackend):
             backend: 'auto', 'picamera2', or 'opencv'.
             device_index: Device index for USB video capture (default 0).
             resolution: Frame resolution (width, height), e.g. (1280, 720).
+            threaded: Whether background threaded frame acquisition is requested.
         """
         self.backend = backend.lower()
         self.device_index = device_index
         self.resolution = (int(resolution[0]), int(resolution[1]))
+        self.threaded = threaded
         self._picam = None
         self._cap = None
         self._is_started = False
@@ -174,3 +182,94 @@ class MockCamera(CameraBackend):
     def stop(self) -> None:
         """Stop mock camera."""
         self.is_started = False
+
+
+class ThreadedCamera(CameraBackend):
+    """Threaded camera wrapper that performs background capture to overlap I/O with inference."""
+
+    def __init__(self, backend: CameraBackend, max_queue_size: int = 1) -> None:
+        """Initialize ThreadedCamera wrapper.
+
+        Args:
+            backend: CameraBackend instance to wrap.
+            max_queue_size: Capacity of queue (default 1 to keep only freshest frame).
+        """
+        self.backend = backend
+        self.max_queue_size = max(1, int(max_queue_size))
+        self._queue: queue.Queue = queue.Queue(maxsize=self.max_queue_size)
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._is_started = False
+
+    @property
+    def is_started(self) -> bool:
+        """Return whether threaded capture is active."""
+        return self._is_started
+
+    def _worker(self) -> None:
+        """Worker thread function continuously capturing frames."""
+        while not self._stop_event.is_set():
+            try:
+                frame = self.backend.capture()
+            except Exception:
+                if self._stop_event.is_set():
+                    break
+                time.sleep(0.005)
+                continue
+
+            if self._queue.full():
+                try:
+                    self._queue.get_nowait()
+                except queue.Empty:
+                    pass
+            try:
+                self._queue.put(frame, timeout=0.01)
+            except queue.Full:
+                pass
+            time.sleep(0.001)
+
+    def start(self) -> None:
+        """Start underlying camera backend and spawn worker thread."""
+        if self._is_started:
+            return
+        self.backend.start()
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+        self._is_started = True
+
+    def capture(self, timeout: float = 1.0) -> np.ndarray:
+        """Retrieve the latest captured frame.
+
+        Args:
+            timeout: Timeout in seconds waiting for next frame.
+
+        Returns:
+            np.ndarray: BGR image frame.
+
+        Raises:
+            RuntimeError: If camera is not started or capture timed out.
+        """
+        if not self._is_started:
+            raise RuntimeError("ThreadedCamera is not started.")
+        try:
+            return self._queue.get(timeout=timeout)
+        except queue.Empty:
+            raise RuntimeError("ThreadedCamera capture timed out.")
+
+    def stop(self, timeout: float = 0.5) -> None:
+        """Stop background worker thread and backend camera.
+
+        Args:
+            timeout: Maximum time to wait for thread join.
+        """
+        self._stop_event.set()
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=timeout)
+        self._thread = None
+        try:
+            self.backend.stop()
+        except Exception:
+            pass
+        self._is_started = False
+

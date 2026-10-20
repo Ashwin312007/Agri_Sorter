@@ -22,6 +22,12 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import cv2
 import numpy as np
 
+try:
+    cv2.setNumThreads(4)
+    cv2.ocl.setUseOpenCL(False)
+except Exception:
+    pass
+
 logger = logging.getLogger("pi_inference")
 
 BAD_LABELS = {"rotten", "rot", "bruise", "spot", "mold", "mould", "damage", "damaged"}
@@ -290,6 +296,33 @@ class ConveyorTracker:
 
         return results
 
+    def propagate(self, timestamp: Optional[float] = None) -> List[Tuple[List[int], int]]:
+        """Kinematically update all active tracks based on elapsed time and conveyor velocity.
+
+        Args:
+            timestamp: Frame timestamp in seconds. Defaults to time.monotonic().
+
+        Returns:
+            List of (box, track_id) tuples for all updated tracks.
+        """
+        now = time.monotonic() if timestamp is None else float(timestamp)
+        dt = (now - self._last_timestamp) if self._last_timestamp is not None else 0.0
+        dt = max(0.0, min(dt, 1.0))
+        self._last_timestamp = now
+
+        vx, vy = self.velocity_px_s
+        dx = vx * dt
+        dy = vy * dt
+
+        for trk in self.tracks.values():
+            trk.cx += dx
+            trk.cy += dy
+            x1, y1, x2, y2 = trk.box
+            trk.box = [int(x1 + dx), int(y1 + dy), int(x2 + dx), int(y2 + dy)]
+            trk.last_seen = now
+
+        return [(trk.box, tid) for tid, trk in self.tracks.items()]
+
 
 # ==============================================================================
 # OpenCV DNN Lightweight Inference Engine (ARM NEON Accelerated)
@@ -512,15 +545,20 @@ class OpenCVInferenceEngine:
         conf: float = 0.30,
         tracker: Optional[str] = None,
         verbose: bool = False,
+        skip_detect: bool = False,
         **kwargs,
     ) -> list:
         """Ultralytics-compatible track interface using pure-Python ConveyorTracker."""
         if imgsz is not None:
             self.input_size = (imgsz, imgsz)
 
-        boxes, scores, class_ids = self.detect(frame, conf_threshold=conf, classes=classes)
+        ts = kwargs.get("timestamp", None)
+        if skip_detect:
+            tracked = self.tracker.propagate(timestamp=ts)
+        else:
+            boxes, scores, class_ids = self.detect(frame, conf_threshold=conf, classes=classes)
+            tracked = self.tracker.update(boxes, confidences=scores, class_ids=class_ids, timestamp=ts)
 
-        tracked = self.tracker.update(boxes, confidences=scores, class_ids=class_ids)
         tracked_boxes = [t[0] for t in tracked]
         tracked_ids = [t[1] for t in tracked]
 
@@ -726,6 +764,7 @@ def main() -> None:
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--camera-backend", choices=("auto", "opencv", "picamera2"), default="auto")
     parser.add_argument("--minimum-frames", type=int, default=3, help="Matching classifications required before decision.")
+    parser.add_argument("--detect-cadence", type=int, default=2, help="Run full detection every N frames (default: 2).")
     parser.add_argument("--log", default="runtime/vision_results.csv")
     args = parser.parse_args()
 
@@ -744,7 +783,9 @@ def main() -> None:
         if is_new:
             writer.writeheader()
         print("Running multi-apple vision. Press q to stop.")
+        frame_idx = 0
         while True:
+            frame_idx += 1
             if picam is not None:
                 frame = cv2.cvtColor(picam.capture_array(), cv2.COLOR_RGB2BGR)
             else:
@@ -752,6 +793,7 @@ def main() -> None:
                 if not ok:
                     continue
 
+            skip_detect = (args.detect_cadence > 1) and (frame_idx % args.detect_cadence != 0)
             result = detector.track(
                 frame,
                 persist=True,
@@ -759,6 +801,7 @@ def main() -> None:
                 imgsz=416,
                 conf=0.30,
                 verbose=False,
+                skip_detect=skip_detect,
             )[0]
 
             if result.boxes is not None and result.boxes.id is not None:

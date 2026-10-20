@@ -327,3 +327,59 @@ def test_cli_flags_headless_and_feed_mock(tmp_path: Path, monkeypatch):
 
     assert csv_file.is_file()
 
+
+def test_conveyor_coordinator_detect_cadence():
+    import numpy as np
+
+    # Test initialization clamping
+    coord = ConveyorCoordinator(mock=True, detect_cadence=3)
+    assert coord.detect_cadence == 3
+    assert coord._frame_count == 0
+
+    coord_clamped = ConveyorCoordinator(mock=True, detect_cadence=0)
+    assert coord_clamped.detect_cadence == 1
+
+    # Test cadence alternating behavior during step()
+    coord_live = ConveyorCoordinator(mock=True, headless=True, detect_cadence=2)
+    coord_live.mock = False  # Enable vision step path
+
+    mock_detector = MagicMock()
+    mock_detector.track.return_value = [MagicMock(boxes=None)]
+    coord_live.detector = mock_detector
+
+    dummy_frame = np.zeros((50, 50, 3), dtype=np.uint8)
+
+    # Frame 1: count=1, 1 % 2 != 0 -> skip_detect=True
+    coord_live.step(frame=dummy_frame, timestamp=1.0)
+    assert mock_detector.track.call_args[1]["skip_detect"] is True
+
+    # Frame 2: count=2, 2 % 2 == 0 -> skip_detect=False
+    coord_live.step(frame=dummy_frame, timestamp=1.05)
+    assert mock_detector.track.call_args[1]["skip_detect"] is False
+
+    # Frame 3: count=3, 3 % 2 != 0 -> skip_detect=True
+    coord_live.step(frame=dummy_frame, timestamp=1.10)
+    assert mock_detector.track.call_args[1]["skip_detect"] is True
+
+
+def test_cli_flags_detect_cadence_and_target_fps(tmp_path: Path, monkeypatch):
+    csv_file = tmp_path / "cli_fps.csv"
+    test_args = [
+        "conveyor_pipeline.py",
+        "--mock",
+        "--duration",
+        "0.1",
+        "--headless",
+        "--detect-cadence",
+        "3",
+        "--target-fps",
+        "60.0",
+        "--csv-out",
+        str(csv_file),
+    ]
+    monkeypatch.setattr(sys, "argv", test_args)
+    main()
+
+    assert csv_file.is_file()
+
+

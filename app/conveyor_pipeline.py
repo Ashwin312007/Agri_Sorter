@@ -16,7 +16,13 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import cv2
 import numpy as np
 
-from app.hardware.camera import CameraBackend, MockCamera, RealCamera
+try:
+    cv2.setNumThreads(4)
+    cv2.ocl.setUseOpenCL(False)
+except Exception:
+    pass
+
+from app.hardware.camera import CameraBackend, MockCamera, RealCamera, ThreadedCamera
 from app.hardware.config import load_config
 from app.hardware.pipeline import UltrasonicPipeline
 from app.pi_inference import (
@@ -96,6 +102,7 @@ class ConveyorCoordinator:
         classifier_model_path: Optional[Union[str, Path]] = "models/external/best.pt",
         headless: bool = False,
         feed_mock_tracks: bool = False,
+        detect_cadence: int = 2,
     ) -> None:
         """Initialize conveyor coordinator.
 
@@ -110,6 +117,7 @@ class ConveyorCoordinator:
             classifier_model_path: Path to external visual classifier model (.pt).
             headless: If True, disables cv2 GUI display windows.
             feed_mock_tracks: If True, allows bench testing sensors with mock tracks.
+            detect_cadence: Run full YOLO detection every N frames (interpolating intermediate frames).
         """
         if belt_speed_mps is not None and speed_override is None:
             speed_override = belt_speed_mps
@@ -125,6 +133,8 @@ class ConveyorCoordinator:
         self.strict_safety = strict_safety
         self.headless = headless
         self.feed_mock_tracks = feed_mock_tracks
+        self.detect_cadence = max(1, int(detect_cadence))
+        self._frame_count = 0
         self.detector_model_path = detector_model_path or "models/detector/yolo11n.pt"
         self.classifier_model_path = classifier_model_path or "models/external/best.pt"
 
@@ -151,6 +161,7 @@ class ConveyorCoordinator:
         # Initialize Camera backend
         cam_cfg = self.config.get("camera", {})
         resolution = cam_cfg.get("resolution", (1280, 720))
+        threaded = cam_cfg.get("threaded", False)
         if self.mock:
             self.camera: CameraBackend = MockCamera(
                 width=int(resolution[0]),
@@ -161,7 +172,10 @@ class ConveyorCoordinator:
                 backend=cam_cfg.get("backend", "auto"),
                 device_index=cam_cfg.get("device_index", 0),
                 resolution=resolution,
+                threaded=threaded,
             )
+        if threaded:
+            self.camera = ThreadedCamera(self.camera)
 
         # Initialize Ultrasonic pipeline
         self.ultrasonic = UltrasonicPipeline(config=self.config, mock=self.mock)
@@ -374,6 +388,9 @@ class ConveyorCoordinator:
         if timestamp is None:
             timestamp = time.time()
 
+        self._frame_count += 1
+        is_cadence = (self._frame_count % self.detect_cadence == 0)
+
         if frame is None and self._is_started:
             try:
                 frame = self.camera.capture()
@@ -391,6 +408,7 @@ class ConveyorCoordinator:
                     conf=0.30,
                     tracker="bytetrack.yaml",
                     verbose=False,
+                    skip_detect=(not is_cadence),
                 )[0]
                 if result.boxes is not None and result.boxes.id is not None:
                     boxes = result.boxes.xyxy.cpu().tolist()
@@ -419,6 +437,8 @@ class ConveyorCoordinator:
                                 visual_conf,
                                 new_track.bbox,
                             )
+                        else:
+                            self.items[track_id].bbox = tuple(int(v) for v in box)
 
                         if not self.headless:
                             x1, y1, x2, y2 = (int(v) for v in box)
@@ -552,6 +572,18 @@ def main() -> None:
         default="models/external/best.pt",
         help="Path to external visual classifier model (.pt)",
     )
+    parser.add_argument(
+        "--detect-cadence",
+        type=int,
+        default=2,
+        help="Run full YOLO detection every N frames (interpolating intermediate frames, default: 2)",
+    )
+    parser.add_argument(
+        "--target-fps",
+        type=float,
+        default=None,
+        help="Target frame rate cap (default: None for unthrottled maximum FPS)",
+    )
     args = parser.parse_args()
 
     coordinator = ConveyorCoordinator(
@@ -564,6 +596,7 @@ def main() -> None:
         classifier_model_path=args.classifier_model,
         headless=args.headless,
         feed_mock_tracks=args.feed_mock_tracks,
+        detect_cadence=args.detect_cadence,
     )
 
     coordinator.start()
@@ -626,7 +659,12 @@ def main() -> None:
             if args.duration is not None and elapsed >= args.duration:
                 break
             coordinator.step(timestamp=now)
-            time.sleep(0.05)
+            if args.target_fps is not None and args.target_fps > 0:
+                target_delay = (1.0 / args.target_fps) - (time.time() - now)
+                if target_delay > 0:
+                    time.sleep(target_delay)
+            elif args.mock:
+                time.sleep(0.001)
     except KeyboardInterrupt:
         print("\nPipeline interrupted by user.")
     finally:

@@ -188,3 +188,58 @@ def test_load_vision_engine_informative_error_on_pt_without_ultralytics(tmp_path
     # When .pt file exists but no .onnx and no ultralytics
     with pytest.raises(FileNotFoundError, match="export this model to ONNX"):
         load_vision_engine(pt_file)
+
+
+def test_conveyor_tracker_propagate():
+    tracker = ConveyorTracker(velocity_px_s=(100.0, 50.0))
+    # Initial detection at t = 1.0s
+    initial_box = [10, 20, 50, 60]
+    tracker.update(boxes=[initial_box], timestamp=1.0)
+    assert 1 in tracker.tracks
+    trk = tracker.tracks[1]
+    assert trk.box == initial_box
+    assert trk.cx == 30.0
+    assert trk.cy == 40.0
+
+    # Propagate at t = 1.1s (dt = 0.1s)
+    # dx = 100 * 0.1 = 10, dy = 50 * 0.1 = 5
+    propagated = tracker.propagate(timestamp=1.1)
+    assert len(propagated) == 1
+    box, tid = propagated[0]
+    assert tid == 1
+    assert box == [20, 25, 60, 65]
+    assert trk.cx == pytest.approx(40.0)
+    assert trk.cy == pytest.approx(45.0)
+    assert trk.last_seen == 1.1
+
+
+def test_opencv_inference_engine_track_skip_detect():
+    engine = object.__new__(OpenCVInferenceEngine)
+    engine.input_size = (416, 416)
+    engine.task = "detect"
+    engine.tracker = ConveyorTracker(velocity_px_s=(50.0, 0.0))
+
+    # Pre-seed tracker with an apple track
+    engine.tracker.update(
+        boxes=[[10, 20, 30, 40]],
+        confidences=[0.92],
+        class_ids=[47],
+        timestamp=1.0,
+    )
+
+    engine.detect = MagicMock()
+    dummy_frame = np.zeros((100, 100, 3), dtype=np.uint8)
+
+    # Calling track with skip_detect=True should NOT call detect()
+    results = engine.track(dummy_frame, skip_detect=True, timestamp=1.1)
+
+    engine.detect.assert_not_called()
+    assert len(results) == 1
+    boxes_res = results[0].boxes
+    assert len(boxes_res) == 1
+    assert boxes_res.id.int().cpu().tolist() == [1]
+    # dt = 0.1s, dx = 50 * 0.1 = 5px -> [15, 20, 35, 40]
+    assert boxes_res.xyxy.cpu().tolist() == [[15, 20, 35, 40]]
+    assert boxes_res.conf.tolist() == [pytest.approx(0.92)]
+    assert boxes_res.cls.int().tolist() == [47]
+
