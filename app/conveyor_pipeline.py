@@ -6,6 +6,7 @@ to ultrasonic acoustic sensing (Station 1) and automated sorter ejection (Statio
 import argparse
 import csv
 import logging
+import os
 import sys
 import time
 import warnings
@@ -16,8 +17,13 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import cv2
 import numpy as np
 
+# Ensure repository root is on sys.path
+_repo_root = Path(__file__).resolve().parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+
 try:
-    cv2.setNumThreads(4)
+    cv2.setNumThreads(3)
     cv2.ocl.setUseOpenCL(False)
 except Exception:
     pass
@@ -38,6 +44,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 BAD_LABELS_REJECT = {"rotten", "rot", "mold", "mould"}
 BAD_LABELS_SECOND = {"bruise", "spot", "damage", "damaged"}
 BAD_LABELS = BAD_LABELS_REJECT | BAD_LABELS_SECOND
+
+DEFAULT_DETECTOR_MODEL = (
+    "models/detector/yolo11n.onnx"
+    if Path("models/detector/yolo11n.onnx").is_file()
+    else "models/detector/yolo11n.pt"
+)
+DEFAULT_CLASSIFIER_MODEL = (
+    "models/external/best.onnx"
+    if Path("models/external/best.onnx").is_file()
+    else "models/external/best.pt"
+)
 
 CSV_FIELDNAMES = [
     "track_id",
@@ -98,8 +115,8 @@ class ConveyorCoordinator:
         belt_speed_mps: Optional[float] = None,
         strict_safety: bool = False,
         internal_model_path: Optional[Union[str, Path]] = None,
-        detector_model_path: Optional[Union[str, Path]] = "models/detector/yolo11n.pt",
-        classifier_model_path: Optional[Union[str, Path]] = "models/external/best.pt",
+        detector_model_path: Optional[Union[str, Path]] = None,
+        classifier_model_path: Optional[Union[str, Path]] = None,
         headless: bool = False,
         feed_mock_tracks: bool = False,
         detect_cadence: int = 2,
@@ -113,8 +130,8 @@ class ConveyorCoordinator:
             belt_speed_mps: Alias for speed_override.
             strict_safety: If True, raises ValueError when speed exceeds max safe speed.
             internal_model_path: Optional path to internal classifier joblib model.
-            detector_model_path: Path to YOLO detector model (.pt).
-            classifier_model_path: Path to external visual classifier model (.pt).
+            detector_model_path: Path to YOLO detector model (.onnx or .pt).
+            classifier_model_path: Path to external visual classifier model (.onnx or .pt).
             headless: If True, disables cv2 GUI display windows.
             feed_mock_tracks: If True, allows bench testing sensors with mock tracks.
             detect_cadence: Run full YOLO detection every N frames (interpolating intermediate frames).
@@ -131,12 +148,12 @@ class ConveyorCoordinator:
 
         self.mock = mock or self.config.get("mock", False)
         self.strict_safety = strict_safety
-        self.headless = headless
+        self.headless = headless or not bool(os.environ.get("DISPLAY"))
         self.feed_mock_tracks = feed_mock_tracks
         self.detect_cadence = max(1, int(detect_cadence))
         self._frame_count = 0
-        self.detector_model_path = detector_model_path or "models/detector/yolo11n.pt"
-        self.classifier_model_path = classifier_model_path or "models/external/best.pt"
+        self.detector_model_path = detector_model_path or DEFAULT_DETECTOR_MODEL
+        self.classifier_model_path = classifier_model_path or DEFAULT_CLASSIFIER_MODEL
 
         conveyor_cfg = self.config.get("conveyor", {})
         self.belt_speed_mps = float(
@@ -563,14 +580,14 @@ def main() -> None:
     parser.add_argument(
         "--detector-model",
         type=str,
-        default="models/detector/yolo11n.pt",
-        help="Path to YOLO detector model (.pt)",
+        default=DEFAULT_DETECTOR_MODEL,
+        help="Path to YOLO detector model (.onnx or .pt)",
     )
     parser.add_argument(
         "--classifier-model",
         type=str,
-        default="models/external/best.pt",
-        help="Path to external visual classifier model (.pt)",
+        default=DEFAULT_CLASSIFIER_MODEL,
+        help="Path to external visual classifier model (.onnx or .pt)",
     )
     parser.add_argument(
         "--detect-cadence",

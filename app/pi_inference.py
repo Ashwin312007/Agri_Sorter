@@ -13,6 +13,7 @@ Standard Lightweight Architecture for Raspberry Pi 4:
 import argparse
 import csv
 import logging
+import os
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -23,7 +24,7 @@ import cv2
 import numpy as np
 
 try:
-    cv2.setNumThreads(4)
+    cv2.setNumThreads(3)
     cv2.ocl.setUseOpenCL(False)
 except Exception:
     pass
@@ -758,15 +759,32 @@ def open_camera(args: Any):
 
 
 def main() -> None:
+    default_detector = (
+        "models/detector/yolo11n.onnx"
+        if Path("models/detector/yolo11n.onnx").is_file()
+        else "models/detector/yolo11n.pt"
+    )
+    default_classifier = (
+        "models/external/best.onnx"
+        if Path("models/external/best.onnx").is_file()
+        else "models/external/best.pt"
+    )
+
     parser = argparse.ArgumentParser(description="Live multi-apple vision for Raspberry Pi 4.")
-    parser.add_argument("--detector-model", required=True, help="Path to detector weights (.onnx or .pt).")
-    parser.add_argument("--classifier-model", required=True, help="Path to classifier weights (.onnx or .pt).")
+    parser.add_argument("--detector-model", default=default_detector, help="Path to detector weights (.onnx or .pt).")
+    parser.add_argument("--classifier-model", default=default_classifier, help="Path to classifier weights (.onnx or .pt).")
+    parser.add_argument("--headless", action="store_true", default=False, help="Run without GUI display (no cv2.imshow).")
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--camera-backend", choices=("auto", "opencv", "picamera2"), default="auto")
     parser.add_argument("--minimum-frames", type=int, default=3, help="Matching classifications required before decision.")
     parser.add_argument("--detect-cadence", type=int, default=2, help="Run full detection every N frames (default: 2).")
     parser.add_argument("--log", default="runtime/vision_results.csv")
     args = parser.parse_args()
+
+    # Auto-detect headless if DISPLAY is absent/empty or explicitly requested
+    is_headless = args.headless or not os.environ.get("DISPLAY")
+    if is_headless and not args.headless:
+        logger.info("No DISPLAY detected in environment. Running in headless mode.")
 
     detector = load_vision_engine(args.detector_model, task="detect")
     classifier = load_vision_engine(args.classifier_model, task="classify")
@@ -778,72 +796,80 @@ def main() -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     is_new = not log_path.exists()
 
-    with open(log_path, "a", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=("timestamp", "vision_track_id", "external_label", "confidence", "vision_decision"))
-        if is_new:
-            writer.writeheader()
-        print("Running multi-apple vision. Press q to stop.")
-        frame_idx = 0
-        while True:
-            frame_idx += 1
-            if picam is not None:
-                frame = cv2.cvtColor(picam.capture_array(), cv2.COLOR_RGB2BGR)
-            else:
-                ok, frame = camera.read()
-                if not ok:
-                    continue
-
-            skip_detect = (args.detect_cadence > 1) and (frame_idx % args.detect_cadence != 0)
-            result = detector.track(
-                frame,
-                persist=True,
-                classes=[apple_class],
-                imgsz=416,
-                conf=0.30,
-                verbose=False,
-                skip_detect=skip_detect,
-            )[0]
-
-            if result.boxes is not None and result.boxes.id is not None:
-                for box, track_id in zip(result.boxes.xyxy.cpu().tolist(), result.boxes.id.int().cpu().tolist()):
-                    crop = crop_box(frame, box)
-                    if crop.size == 0:
+    try:
+        with open(log_path, "a", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=("timestamp", "vision_track_id", "external_label", "confidence", "vision_decision"))
+            if is_new:
+                writer.writeheader()
+            print("Running multi-apple vision. Press " + ("Ctrl+C" if is_headless else "q or Ctrl+C") + " to stop.")
+            frame_idx = 0
+            while True:
+                frame_idx += 1
+                if picam is not None:
+                    frame = cv2.cvtColor(picam.capture_array(), cv2.COLOR_RGB2BGR)
+                else:
+                    ok, frame = camera.read()
+                    if not ok:
+                        time.sleep(0.01)
                         continue
-                    label, confidence = classify_apple(classifier, crop)
-                    final_label, mean_confidence, ready = decisions.observe(track_id, label, confidence)
-                    vision_decision = "SECOND_QUALITY" if final_label in BAD_LABELS else "SIZE_GRADING"
-                    x1, y1, x2, y2 = (int(value) for value in box)
-                    color = (0, 0, 255) if vision_decision == "SECOND_QUALITY" else (0, 200, 0)
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                    cv2.putText(
-                        frame,
-                        f"#{track_id} {final_label} {mean_confidence:.0%}",
-                        (x1, max(20, y1 - 8)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.55,
-                        color,
-                        2,
-                    )
-                    if ready:
-                        writer.writerow({
-                            "timestamp": time.time(),
-                            "vision_track_id": track_id,
-                            "external_label": final_label,
-                            "confidence": f"{mean_confidence:.4f}",
-                            "vision_decision": vision_decision,
-                        })
-                        handle.flush()
-                        decisions.mark_emitted(track_id)
-                        print(f"Vision track #{track_id}: {vision_decision} ({final_label}, {mean_confidence:.0%})")
-            decisions.purge_old()
-            cv2.imshow("Fruit sorter: multi-apple vision", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
-    if picam is not None:
-        picam.stop()
-    if camera is not None:
-        camera.release()
-    cv2.destroyAllWindows()
+
+                skip_detect = (args.detect_cadence > 1) and (frame_idx % args.detect_cadence != 0)
+                result = detector.track(
+                    frame,
+                    persist=True,
+                    classes=[apple_class],
+                    imgsz=416,
+                    conf=0.30,
+                    verbose=False,
+                    skip_detect=skip_detect,
+                )[0]
+
+                if result.boxes is not None and result.boxes.id is not None:
+                    for box, track_id in zip(result.boxes.xyxy.cpu().tolist(), result.boxes.id.int().cpu().tolist()):
+                        crop = crop_box(frame, box)
+                        if crop.size == 0:
+                            continue
+                        label, confidence = classify_apple(classifier, crop)
+                        final_label, mean_confidence, ready = decisions.observe(track_id, label, confidence)
+                        vision_decision = "SECOND_QUALITY" if final_label in BAD_LABELS else "SIZE_GRADING"
+                        x1, y1, x2, y2 = (int(value) for value in box)
+                        color = (0, 0, 255) if vision_decision == "SECOND_QUALITY" else (0, 200, 0)
+                        if not is_headless:
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                            cv2.putText(
+                                frame,
+                                f"#{track_id} {final_label} {mean_confidence:.0%}",
+                                (x1, max(20, y1 - 8)),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.55,
+                                color,
+                                2,
+                            )
+                        if ready:
+                            writer.writerow({
+                                "timestamp": time.time(),
+                                "vision_track_id": track_id,
+                                "external_label": final_label,
+                                "confidence": f"{mean_confidence:.4f}",
+                                "vision_decision": vision_decision,
+                            })
+                            handle.flush()
+                            decisions.mark_emitted(track_id)
+                            print(f"Vision track #{track_id}: {vision_decision} ({final_label}, {mean_confidence:.0%})")
+                decisions.purge_old()
+                if not is_headless:
+                    cv2.imshow("Fruit sorter: multi-apple vision", frame)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
+    except KeyboardInterrupt:
+        print("\nMulti-apple vision stopped by user.")
+    finally:
+        if picam is not None:
+            picam.stop()
+        if camera is not None:
+            camera.release()
+        if not is_headless:
+            cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

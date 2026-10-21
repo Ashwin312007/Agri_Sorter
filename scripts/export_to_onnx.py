@@ -43,6 +43,41 @@ def check_dependencies() -> bool:
     return True
 
 
+def patch_onnx_for_opencv_dnn(onnx_path: Path) -> None:
+    """Ensure ONNX detect models are compatible with OpenCV 4.6.0+ DNN engine.
+
+    OpenCV 4.6.0 (default on Debian 12 / Raspberry Pi OS Bookworm) fails on YOLO11/v8
+    anchor stride multiplication if the stride constant is shape (1, N) instead of
+    matching the bbox dimension (1, 4, N).
+    """
+    try:
+        import numpy as np
+        import onnx
+        from onnx import numpy_helper
+
+        model = onnx.load(str(onnx_path))
+        modified = False
+
+        for node in model.graph.node:
+            if node.op_type == "Mul":
+                for in_name in node.input:
+                    for init in list(model.graph.initializer):
+                        if init.name == in_name:
+                            arr = numpy_helper.to_array(init)
+                            if arr.ndim == 2 and arr.shape[0] == 1 and arr.shape[1] > 100:
+                                arr_tiled = np.tile(arr, (1, 4, 1))
+                                new_init = numpy_helper.from_array(arr_tiled.astype(np.float32), name=init.name)
+                                model.graph.initializer.remove(init)
+                                model.graph.initializer.append(new_init)
+                                modified = True
+                                print(f"[+] Patched initializer '{init.name}' ({arr.shape} -> {arr_tiled.shape}) for OpenCV 4.6.0 compatibility.")
+
+        if modified:
+            onnx.save(model, str(onnx_path))
+    except Exception as exc:
+        print(f"[!] Note: Could not post-process ONNX for OpenCV 4.6.0: {exc}")
+
+
 def export_model(
     model_path: Path,
     imgsz: int,
@@ -65,6 +100,8 @@ def export_model(
         simplify=True,
     )
     exported = Path(exported_path)
+    if task == "detect":
+        patch_onnx_for_opencv_dnn(exported)
     size_mb = exported.stat().st_size / (1024 * 1024)
     print(f"✅ Successfully exported {task} model to: {exported} ({size_mb:.2f} MB)")
     return exported
