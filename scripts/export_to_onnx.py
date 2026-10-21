@@ -102,6 +102,22 @@ def export_model(
     exported = Path(exported_path)
     if task == "detect":
         patch_onnx_for_opencv_dnn(exported)
+
+    # Save sibling metadata JSON with class names for lightweight OpenCV DNN on Pi 4
+    try:
+        import json
+        names = model.names
+        meta_dict = {
+            "task": task,
+            "names": {int(k): str(v) for k, v in names.items()} if isinstance(names, dict) else list(names),
+            "imgsz": imgsz,
+        }
+        with open(exported.with_suffix(".json"), "w") as jf:
+            json.dump(meta_dict, jf, indent=2)
+        print(f"[+] Saved sibling class metadata to: {exported.with_suffix('.json')}")
+    except Exception as exc:
+        print(f"[!] Note: Could not save class metadata JSON: {exc}")
+
     size_mb = exported.stat().st_size / (1024 * 1024)
     print(f"✅ Successfully exported {task} model to: {exported} ({size_mb:.2f} MB)")
     return exported

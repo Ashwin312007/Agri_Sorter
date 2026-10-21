@@ -14,6 +14,7 @@ from app.pi_inference import (
     _ArrayWrapper,
     crop_box,
     find_class_id,
+    is_defect_detector,
     load_vision_engine,
 )
 from app.ultrasonic_capture import (
@@ -242,4 +243,57 @@ def test_opencv_inference_engine_track_skip_detect():
     assert boxes_res.xyxy.cpu().tolist() == [[15, 20, 35, 40]]
     assert boxes_res.conf.tolist() == [pytest.approx(0.92)]
     assert boxes_res.cls.int().tolist() == [47]
+
+
+def test_is_defect_detector():
+    # 1. COCO detector (no defect classes)
+    coco_mock = MagicMock()
+    coco_mock.names = {0: "person", 47: "apple", 49: "orange"}
+    assert is_defect_detector(coco_mock) is False
+
+    # 2. Defect detector with fresh_apple, rot, bruise
+    defect_mock = MagicMock()
+    defect_mock.names = {0: "fresh_apple", 1: "rot", 2: "bruise"}
+    assert is_defect_detector(defect_mock) is True
+
+    # 3. Defect detector with fresh/rotten
+    cls_mock = MagicMock()
+    cls_mock.names = {0: "fresh", 1: "rotten"}
+    assert is_defect_detector(cls_mock) is True
+
+    # 4. Empty or invalid model
+    empty_mock = MagicMock()
+    empty_mock.names = {}
+    assert is_defect_detector(empty_mock) is False
+
+
+def test_find_class_id_with_defect_classes():
+    # Model with fresh_apple (has substring apple)
+    mock_defect = MagicMock()
+    mock_defect.names = {0: "fresh_apple", 1: "rot", 2: "bruise"}
+    assert find_class_id(mock_defect, "apple") == 0
+    assert find_class_id(mock_defect, "rot") == 1
+    assert find_class_id(mock_defect, "bruise") == 2
+
+    # Model with fresh / rotten (no apple in name)
+    mock_generic = MagicMock()
+    mock_generic.names = {0: "fresh", 1: "rotten"}
+    assert find_class_id(mock_generic, "apple") == 0
+    assert find_class_id(mock_generic, "rotten") == 1
+
+
+def test_dataset_sample_creation_and_validation(tmp_path):
+    from scripts.download_yolo_dataset import create_sample_dataset, validate_dataset
+
+    ds_dir = tmp_path / "sample_dataset"
+    classes = {0: "fresh_apple", 1: "rot", 2: "bruise"}
+    yaml_path = create_sample_dataset(ds_dir, classes=classes)
+
+    assert yaml_path.is_file()
+    valid, stats = validate_dataset(ds_dir)
+    assert valid is True
+    assert stats["total_images"] > 0
+    assert stats["total_boxes"] > 0
+    assert len(stats["errors"]) == 0
+
 

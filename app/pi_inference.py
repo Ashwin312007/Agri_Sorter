@@ -12,6 +12,7 @@ Standard Lightweight Architecture for Raspberry Pi 4:
 """
 import argparse
 import csv
+import json
 import logging
 import os
 import time
@@ -32,6 +33,21 @@ except Exception:
 logger = logging.getLogger("pi_inference")
 
 BAD_LABELS = {"rotten", "rot", "bruise", "spot", "mold", "mould", "damage", "damaged"}
+
+DEFECT_KEYWORDS = {
+    "rot",
+    "rotten",
+    "bruise",
+    "bruised",
+    "spot",
+    "mold",
+    "mould",
+    "damage",
+    "damaged",
+    "defect",
+    "fresh_apple",
+    "fresh",
+}
 
 # Standard 80-class COCO mapping (Class 47 is 'apple')
 COCO_CLASSES: Dict[int, str] = {
@@ -370,10 +386,45 @@ class OpenCVInferenceEngine:
         # Class names dictionary
         if class_names is not None:
             self.names = dict(class_names)
-        elif self.task == "classify":
-            self.names = {0: "fresh", 1: "rotten"}
         else:
-            self.names = dict(COCO_CLASSES)
+            # Auto-resolve class names from sibling metadata JSON/YAML if present
+            loaded_names = None
+            json_meta = self.model_path.with_suffix(".json")
+            if json_meta.is_file():
+                try:
+                    with open(json_meta, "r") as jf:
+                        meta_data = json.load(jf)
+                    if "names" in meta_data:
+                        raw = meta_data["names"]
+                        if isinstance(raw, dict):
+                            loaded_names = {int(k): str(v) for k, v in raw.items()}
+                        elif isinstance(raw, list):
+                            loaded_names = {i: str(v) for i, v in enumerate(raw)}
+                except Exception as exc:
+                    logger.debug("Could not read sibling json metadata for %s: %s", self.model_path, exc)
+
+            if loaded_names is None:
+                yaml_meta = self.model_path.with_suffix(".yaml")
+                if yaml_meta.is_file():
+                    try:
+                        import yaml
+                        with open(yaml_meta, "r") as yf:
+                            meta_data = yaml.safe_load(yf)
+                        if "names" in meta_data:
+                            raw = meta_data["names"]
+                            if isinstance(raw, dict):
+                                loaded_names = {int(k): str(v) for k, v in raw.items()}
+                            elif isinstance(raw, list):
+                                loaded_names = {i: str(v) for i, v in enumerate(raw)}
+                    except Exception as exc:
+                        logger.debug("Could not read sibling yaml metadata for %s: %s", self.model_path, exc)
+
+            if loaded_names is not None:
+                self.names = loaded_names
+            elif self.task == "classify":
+                self.names = {0: "fresh", 1: "rotten"}
+            else:
+                self.names = dict(COCO_CLASSES)
 
         logger.info("Initializing OpenCVInferenceEngine from %s (task=%s, size=%s)", self.model_path, self.task, self.input_size)
         self.net = cv2.dnn.readNetFromONNX(str(self.model_path))
@@ -660,20 +711,62 @@ def load_vision_engine(
 # ==============================================================================
 # Helper Functions & Utilities
 # ==============================================================================
+def is_defect_detector(model: Any) -> bool:
+    """Detect if the detector model has specialized defect classes (e.g. rot, bruise, fresh, damaged)."""
+    names_dict = getattr(model, "names", {})
+    if isinstance(names_dict, dict):
+        name_list = list(names_dict.values())
+    elif isinstance(names_dict, (list, tuple)):
+        name_list = list(names_dict)
+    else:
+        return False
+
+    for n in name_list:
+        n_str = str(n).lower()
+        if any(kw in n_str for kw in DEFECT_KEYWORDS):
+            return True
+    return False
+
+
 def find_class_id(model: Any, class_name: str) -> int:
     """Find integer class ID for a given class name from model.names."""
     names_dict = getattr(model, "names", {})
+    target = class_name.lower()
+
+    # 1. Exact match in names
     if isinstance(names_dict, dict):
         for class_id, name in names_dict.items():
-            if str(name).lower() == class_name.lower():
+            if str(name).lower() == target:
                 return int(class_id)
     elif isinstance(names_dict, (list, tuple)):
         for class_id, name in enumerate(names_dict):
-            if str(name).lower() == class_name.lower():
+            if str(name).lower() == target:
                 return class_id
 
-    # Fallback default for standard COCO apple class
-    if class_name.lower() == "apple":
+    # 2. If searching for 'apple', check for specialized defect variants (e.g. 'fresh_apple')
+    if target == "apple":
+        if isinstance(names_dict, dict):
+            for class_id, name in names_dict.items():
+                if "apple" in str(name).lower():
+                    return int(class_id)
+            if is_defect_detector(model):
+                for class_id, name in names_dict.items():
+                    if "fresh" in str(name).lower():
+                        return int(class_id)
+                if len(names_dict) > 0:
+                    return int(next(iter(names_dict.keys())))
+        elif isinstance(names_dict, (list, tuple)):
+            for class_id, name in enumerate(names_dict):
+                if "apple" in str(name).lower():
+                    return class_id
+            if is_defect_detector(model):
+                for class_id, name in enumerate(names_dict):
+                    if "fresh" in str(name).lower():
+                        return class_id
+                if len(names_dict) > 0:
+                    return 0
+
+        # Fallback default for standard COCO apple class
         return 47
 
     raise ValueError(f"Detector does not contain the class '{class_name}'. Available: {names_dict}")
@@ -773,6 +866,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Live multi-apple vision for Raspberry Pi 4.")
     parser.add_argument("--detector-model", default=default_detector, help="Path to detector weights (.onnx or .pt).")
     parser.add_argument("--classifier-model", default=default_classifier, help="Path to classifier weights (.onnx or .pt).")
+    parser.add_argument(
+        "--single-pass",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Force single-pass detection or two-stage detection (default: auto-detected from detector classes).",
+    )
     parser.add_argument("--headless", action="store_true", default=False, help="Run without GUI display (no cv2.imshow).")
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--camera-backend", choices=("auto", "opencv", "picamera2"), default="opencv")
@@ -787,8 +886,21 @@ def main() -> None:
         logger.info("No DISPLAY detected in environment. Running in headless mode.")
 
     detector = load_vision_engine(args.detector_model, task="detect")
-    classifier = load_vision_engine(args.classifier_model, task="classify")
-    apple_class = find_class_id(detector, "apple")
+    has_defects = is_defect_detector(detector)
+    single_pass = args.single_pass if args.single_pass is not None else has_defects
+
+    classifier = None
+    apple_class = None
+    if single_pass:
+        logger.info(
+            "Detector '%s' has specialized defect classes: %s. Enabling single-pass edge inference (bypassing secondary classifier)!",
+            args.detector_model,
+            getattr(detector, "names", {}),
+        )
+    else:
+        logger.info("Detector does not contain defect classes; loading Stage 2 classifier.")
+        classifier = load_vision_engine(args.classifier_model, task="classify")
+        apple_class = find_class_id(detector, "apple")
 
     decisions = TrackDecisions(args.minimum_frames)
     picam, camera = open_camera(args)
@@ -814,10 +926,11 @@ def main() -> None:
                         continue
 
                 skip_detect = (args.detect_cadence > 1) and (frame_idx % args.detect_cadence != 0)
+                track_classes = None if single_pass else [apple_class]
                 result = detector.track(
                     frame,
                     persist=True,
-                    classes=[apple_class],
+                    classes=track_classes,
                     imgsz=416,
                     conf=0.30,
                     verbose=False,
@@ -825,11 +938,37 @@ def main() -> None:
                 )[0]
 
                 if result.boxes is not None and result.boxes.id is not None:
-                    for box, track_id in zip(result.boxes.xyxy.cpu().tolist(), result.boxes.id.int().cpu().tolist()):
-                        crop = crop_box(frame, box)
-                        if crop.size == 0:
-                            continue
-                        label, confidence = classify_apple(classifier, crop)
+                    boxes = result.boxes.xyxy.cpu().tolist()
+                    track_ids = result.boxes.id.int().cpu().tolist()
+                    num_tracks = len(track_ids)
+                    class_ids = [0] * num_tracks
+                    confidences = [1.0] * num_tracks
+                    try:
+                        if hasattr(result.boxes, "cls") and result.boxes.cls is not None:
+                            c = result.boxes.cls.int().cpu().tolist()
+                            if isinstance(c, (list, tuple)) and len(c) == num_tracks:
+                                class_ids = [int(v) for v in c]
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(result.boxes, "conf") and result.boxes.conf is not None:
+                            cf = result.boxes.conf.float().cpu().tolist()
+                            if isinstance(cf, (list, tuple)) and len(cf) == num_tracks:
+                                confidences = [float(v) for v in cf]
+                    except Exception:
+                        pass
+
+                    for box, track_id, cid, conf in zip(boxes, track_ids, class_ids, confidences):
+                        if single_pass:
+                            # Detector classifies each box directly, bypassing secondary classifier
+                            label = detector.names.get(cid, str(cid)).lower()
+                            confidence = float(conf)
+                        else:
+                            crop = crop_box(frame, box)
+                            if crop.size == 0:
+                                continue
+                            label, confidence = classify_apple(classifier, crop)
+
                         final_label, mean_confidence, ready = decisions.observe(track_id, label, confidence)
                         vision_decision = "SECOND_QUALITY" if final_label in BAD_LABELS else "SIZE_GRADING"
                         x1, y1, x2, y2 = (int(value) for value in box)

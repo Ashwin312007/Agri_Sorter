@@ -35,6 +35,7 @@ from app.pi_inference import (
     classify_apple,
     crop_box,
     find_class_id,
+    is_defect_detector,
     load_vision_engine,
 )
 
@@ -224,10 +225,16 @@ class ConveyorCoordinator:
 
         logger.info("Loading vision detector from %s", det_path)
         self.detector = load_vision_engine(det_path, task="detect")
-        self.apple_class_id = find_class_id(self.detector, "apple")
+        self.single_pass = is_defect_detector(self.detector)
 
-        logger.info("Loading vision classifier from %s", cls_path)
-        self.classifier = load_vision_engine(cls_path, task="classify")
+        if self.single_pass:
+            logger.info("Detector %s contains defect classes; running in single-pass mode", det_path)
+            self.classifier = None
+            self.apple_class_id = None
+        else:
+            self.apple_class_id = find_class_id(self.detector, "apple")
+            logger.info("Loading vision classifier from %s", cls_path)
+            self.classifier = load_vision_engine(cls_path, task="classify")
 
     def _check_speed_safety(self) -> None:
         """Validate conveyor speed against hardware limits."""
@@ -417,10 +424,11 @@ class ConveyorCoordinator:
         # Station 0: Live camera detection & tracking
         if not self.mock and not self.feed_mock_tracks:
             if frame is not None and self.detector is not None:
+                track_classes = None if getattr(self, "single_pass", False) else [self.apple_class_id]
                 result = self.detector.track(
                     frame,
                     persist=True,
-                    classes=[self.apple_class_id],
+                    classes=track_classes,
                     imgsz=416,
                     conf=0.30,
                     tracker="bytetrack.yaml",
@@ -430,14 +438,36 @@ class ConveyorCoordinator:
                 if result.boxes is not None and result.boxes.id is not None:
                     boxes = result.boxes.xyxy.cpu().tolist()
                     track_ids = result.boxes.id.int().cpu().tolist()
-                    for box, track_id in zip(boxes, track_ids):
+                    num_tracks = len(track_ids)
+                    class_ids = [0] * num_tracks
+                    confidences = [1.0] * num_tracks
+                    try:
+                        if hasattr(result.boxes, "cls") and result.boxes.cls is not None:
+                            c = result.boxes.cls.int().cpu().tolist()
+                            if isinstance(c, (list, tuple)) and len(c) == num_tracks:
+                                class_ids = [int(v) for v in c]
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(result.boxes, "conf") and result.boxes.conf is not None:
+                            cf = result.boxes.conf.float().cpu().tolist()
+                            if isinstance(cf, (list, tuple)) and len(cf) == num_tracks:
+                                confidences = [float(v) for v in cf]
+                    except Exception:
+                        pass
+
+                    for box, track_id, cid, conf in zip(boxes, track_ids, class_ids, confidences):
                         track_id = int(track_id)
                         if track_id not in self.items:
-                            crop = crop_box(frame, box)
-                            if crop.size > 0 and self.classifier is not None:
-                                visual_label, visual_conf = classify_apple(self.classifier, crop)
+                            if getattr(self, "single_pass", False):
+                                visual_label = self.detector.names.get(cid, str(cid)).lower()
+                                visual_conf = float(conf)
                             else:
-                                visual_label, visual_conf = "apple", 1.0
+                                crop = crop_box(frame, box)
+                                if crop.size > 0 and self.classifier is not None:
+                                    visual_label, visual_conf = classify_apple(self.classifier, crop)
+                                else:
+                                    visual_label, visual_conf = "apple", 1.0
                             new_track = FruitTrack(
                                 track_id=track_id,
                                 entry_time=timestamp,
