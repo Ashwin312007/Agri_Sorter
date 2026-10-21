@@ -4,37 +4,47 @@ Raspberry Pi 4 starter system for apple grading.
 
 ## Architecture
 
-- **Multi-fruit external vision**: YOLO apple detector plus a per-apple freshness classifier executed 100% offline on the Raspberry Pi 4 CPU using static ONNX models via OpenCV DNN (`cv2.dnn`) with ARM NEON vector acceleration (zero PyTorch / Ultralytics runtime bloat).
+- **Multi-fruit external vision**: Fine-tuned YOLO11n apple defect detector (`bruising`, `crack`, `insect_bite`, `rotten`, `russetting`) supporting single-pass defect classification and spatial tracking. Executed 100% offline on the Raspberry Pi 4 CPU using static ONNX models via OpenCV DNN (`cv2.dnn`) with ARM NEON vector acceleration (zero PyTorch / Ultralytics runtime bloat).
+- **Dual-Stage Fallback**: Supports dedicated Stage 1 YOLO apple detector plus Stage 2 freshness classifier when using separate models.
 - **Internal quality**: XGBoost model trained from ultrasonic acoustic measurements.
 - **Runtime**: Raspberry Pi 4 (BCM2711 Quad Cortex-A72), standard USB webcam (`/dev/video0`) via OpenCV (or optional Picamera2), ADS1115 I2C ADC, GPIO ultrasonic transmitter, encoder, and sorter ejection servo.
 
-Model training and ONNX export happen on a workstation or Colab. The Raspberry Pi 4 performs 100% offline edge inference only.
+Model training and ONNX export happen on a workstation or laptop. The Raspberry Pi 4 performs 100% offline edge inference only.
 
-## Dataset Reality
+## Dataset Reality & Roboflow Integration
 
-The included external training pipeline accepts a YOLO-format dataset. A useful public starting point is the [Apple Defects Dataset](https://github.com/cidis-vision/apple-defects), which contains visible images and masks for rot, bruise, and spot. Public data will not exactly match your camera, lighting, fruit variety, or conveyor view, so add your own images before trusting the sorter.
+The sorter uses authentic YOLO-format datasets with normalized bounding boxes (`[class, cx, cy, w, h]`):
 
-There is no ready-made dataset for your particular ultrasonic transmitter/receiver readings. Collect `data/internal/measurements.csv`, then cut open each measured apple and fill in `internal_label` (`0=healthy`, `1=damaged`).
+1. **Roboflow Universe Integration**:
+   Download pre-annotated apple defect datasets directly via Roboflow API or direct URL:
+   ```bash
+   # Download via Roboflow API key:
+   python3 scripts/download_yolo_dataset.py --roboflow-key "YOUR_API_KEY" --project "apple-defects-yafjq"
 
-## External Baseline Used in This Repository
+   # Or download a verified starter dataset (no API key needed):
+   python3 scripts/download_yolo_dataset.py --sample
+   ```
 
-The included public dataset is split into `Fresh` and `Rotten` apples, so the first trained model is a lightweight image classifier. It answers `FRESH` or `ROTTEN`; it does not locate a wound. Use the segmentation script only after adding a wound-mask dataset.
+2. **Ultrasonic Firmness Dataset**:
+   Collect `data/internal/measurements.csv` on your machine, then cut open each measured apple and fill in `internal_label` (`0=healthy`, `1=damaged`).
 
-## Setup on a Training Workstation
+## Training & Edge Export on a Workstation
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+# 1. Activate development environment
 pip install -r requirements-train.txt
 
-# 1. Prepare data and train models
-python3 scripts/prepare_apple_freshness_data.py --source "data/external/fresh_rotten_source/Fruit Freshness Dataset/Fruit Freshness Dataset/Apple"
-python3 scripts/train_external_classifier.py
-python3 scripts/train_internal.py --csv data/internal/measurements.csv
+# 2. Train YOLO11n on Apple Defects (Auto-exports to static ONNX with ARM NEON patching)
+python3 scripts/train_yolo_defects.py --data data/external/apple_defects/data.yaml --epochs 25 --imgsz 416
 
-# 2. Export PyTorch models to static ONNX for Raspberry Pi 4 OpenCV DNN
-python3 scripts/export_to_onnx.py
+# 3. (Optional) Train internal ultrasonic XGBoost model
+python3 scripts/train_internal.py --csv data/internal/measurements.csv
 ```
+
+The training script automatically generates:
+- `models/detector/yolo11n.pt` (PyTorch weights)
+- `models/detector/yolo11n.onnx` (Static 416x416 ONNX with OpenCV 4.6.0 ARM patch)
+- `models/detector/yolo11n.json` (Class metadata: bruising, crack, insect_bite, rotten, russetting)
 
 Copy the resulting lightweight models into `models/` on the Raspberry Pi:
 
