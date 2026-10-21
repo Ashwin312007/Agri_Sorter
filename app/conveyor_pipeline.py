@@ -121,6 +121,7 @@ class ConveyorCoordinator:
         headless: bool = False,
         feed_mock_tracks: bool = False,
         detect_cadence: int = 2,
+        use_arduino: bool = False,
     ) -> None:
         """Initialize conveyor coordinator.
 
@@ -136,6 +137,7 @@ class ConveyorCoordinator:
             headless: If True, disables cv2 GUI display windows.
             feed_mock_tracks: If True, allows bench testing sensors with mock tracks.
             detect_cadence: Run full YOLO detection every N frames (interpolating intermediate frames).
+            use_arduino: If True, enables Arduino HC-SR04 USB serial bridge for Station 1.
         """
         if belt_speed_mps is not None and speed_override is None:
             speed_override = belt_speed_mps
@@ -148,6 +150,7 @@ class ConveyorCoordinator:
                 self.config["mock"] = True
 
         self.mock = mock or self.config.get("mock", False)
+        self.use_arduino = use_arduino
         self.strict_safety = strict_safety
         self.headless = headless or not bool(os.environ.get("DISPLAY"))
         self.feed_mock_tracks = feed_mock_tracks
@@ -197,6 +200,13 @@ class ConveyorCoordinator:
 
         # Initialize Ultrasonic pipeline
         self.ultrasonic = UltrasonicPipeline(config=self.config, mock=self.mock)
+
+        # Initialize Arduino serial bridge if requested
+        self.arduino_bridge = None
+        if self.use_arduino:
+            from app.hardware.arduino_bridge import ArduinoBridge
+
+            self.arduino_bridge = ArduinoBridge(config=self.config, mock=self.mock)
 
         # Initialize internal classification model if present
         self.internal_model = None
@@ -277,6 +287,8 @@ class ConveyorCoordinator:
         """Start hardware subsystems."""
         if not self._is_started:
             self.camera.start()
+            if self.arduino_bridge is not None:
+                self.arduino_bridge.start()
             self._is_started = True
 
     def stop(self) -> None:
@@ -286,6 +298,11 @@ class ConveyorCoordinator:
                 self.camera.stop()
             except Exception:
                 pass
+            if self.arduino_bridge is not None:
+                try:
+                    self.arduino_bridge.stop()
+                except Exception:
+                    pass
             try:
                 self.ultrasonic.close()
             except Exception:
@@ -509,9 +526,19 @@ class ConveyorCoordinator:
 
             # Station 1: Ultrasonic measurement window
             if track.status == "IN_TRANSIT" and timestamp >= t_arrive:
-                meas = self.ultrasonic.measure()
-                track.ultrasonic_travel_time_us = float(meas["travel_time_us"])
-                track.ultrasonic_amplitude = int(meas["received_amplitude"])
+                if self.arduino_bridge is not None:
+                    reading = self.arduino_bridge.get_latest_reading()
+                    if reading is not None:
+                        track.ultrasonic_travel_time_us = float(reading.tof_us)
+                        track.ultrasonic_amplitude = int(reading.dist_mm)
+                    else:
+                        meas = self.ultrasonic.measure()
+                        track.ultrasonic_travel_time_us = float(meas["travel_time_us"])
+                        track.ultrasonic_amplitude = int(meas["received_amplitude"])
+                else:
+                    meas = self.ultrasonic.measure()
+                    track.ultrasonic_travel_time_us = float(meas["travel_time_us"])
+                    track.ultrasonic_amplitude = int(meas["received_amplitude"])
                 self._evaluate_grade(track)
                 track.status = "MEASURED"
                 logger.info(
@@ -631,6 +658,12 @@ def main() -> None:
         default=None,
         help="Target frame rate cap (default: None for unthrottled maximum FPS)",
     )
+    parser.add_argument(
+        "--use-arduino",
+        action="store_true",
+        default=False,
+        help="Use Arduino HC-SR04 USB serial bridge for ultrasonic sensing at Station 1",
+    )
     args = parser.parse_args()
 
     coordinator = ConveyorCoordinator(
@@ -644,6 +677,7 @@ def main() -> None:
         headless=args.headless,
         feed_mock_tracks=args.feed_mock_tracks,
         detect_cadence=args.detect_cadence,
+        use_arduino=args.use_arduino,
     )
 
     coordinator.start()

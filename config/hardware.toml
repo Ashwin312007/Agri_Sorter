@@ -28,3 +28,11 @@ ultrasonic_to_sorter_distance_m = 0.25
 sensor_mounting_height_mm = 240      # Transducer must be >= 220 mm to clear <=1.2ms blind zone
 apex_sampling_window_mm = 35         # Measured zone on apple crown
 
+[arduino]
+port = "auto"
+baud_rate = 115200
+baseline_distance_mm = 240
+fruit_threshold_mm = 30
+timeout_s = 1.0
+
+
