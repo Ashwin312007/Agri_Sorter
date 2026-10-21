@@ -775,7 +775,7 @@ def main() -> None:
     parser.add_argument("--classifier-model", default=default_classifier, help="Path to classifier weights (.onnx or .pt).")
     parser.add_argument("--headless", action="store_true", default=False, help="Run without GUI display (no cv2.imshow).")
     parser.add_argument("--camera", type=int, default=0)
-    parser.add_argument("--camera-backend", choices=("auto", "opencv", "picamera2"), default="auto")
+    parser.add_argument("--camera-backend", choices=("auto", "opencv", "picamera2"), default="opencv")
     parser.add_argument("--minimum-frames", type=int, default=3, help="Matching classifications required before decision.")
     parser.add_argument("--detect-cadence", type=int, default=2, help="Run full detection every N frames (default: 2).")
     parser.add_argument("--log", default="runtime/vision_results.csv")

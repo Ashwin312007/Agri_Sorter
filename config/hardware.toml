@@ -16,7 +16,7 @@ gain = 1                          # ±4.096 V FSR
 data_rate = 860                   # Max ADS1115 rate (860 SPS)
 
 [camera]
-backend = "auto"                  # auto | picamera2 | opencv
+backend = "opencv"                # opencv | picamera2 | auto
 device_index = 0
 resolution = [1280, 720]
 

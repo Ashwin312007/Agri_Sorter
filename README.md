@@ -4,52 +4,89 @@ Raspberry Pi 4 starter system for apple grading.
 
 ## Architecture
 
-- Multi-fruit external vision: YOLO apple detector plus a per-apple freshness classifier
-- Internal quality: XGBoost model trained from ultrasonic measurements
-- Runtime: Raspberry Pi 4, Picamera2/OpenCV, GPIO break-beam, encoder, and servo
+- **Multi-fruit external vision**: YOLO apple detector plus a per-apple freshness classifier executed 100% offline on the Raspberry Pi 4 CPU using static ONNX models via OpenCV DNN (`cv2.dnn`) with ARM NEON vector acceleration (zero PyTorch / Ultralytics runtime bloat).
+- **Internal quality**: XGBoost model trained from ultrasonic acoustic measurements.
+- **Runtime**: Raspberry Pi 4 (BCM2711 Quad Cortex-A72), standard USB webcam (`/dev/video0`) via OpenCV (or optional Picamera2), ADS1115 I2C ADC, GPIO ultrasonic transmitter, encoder, and sorter ejection servo.
 
-Training happens on a laptop or Colab. The Pi performs inference only.
+Model training and ONNX export happen on a workstation or Colab. The Raspberry Pi 4 performs 100% offline edge inference only.
 
-## Dataset reality
+## Dataset Reality
 
 The included external training pipeline accepts a YOLO-format dataset. A useful public starting point is the [Apple Defects Dataset](https://github.com/cidis-vision/apple-defects), which contains visible images and masks for rot, bruise, and spot. Public data will not exactly match your camera, lighting, fruit variety, or conveyor view, so add your own images before trusting the sorter.
 
 There is no ready-made dataset for your particular ultrasonic transmitter/receiver readings. Collect `data/internal/measurements.csv`, then cut open each measured apple and fill in `internal_label` (`0=healthy`, `1=damaged`).
 
-## External baseline used in this repository
+## External Baseline Used in This Repository
 
 The included public dataset is split into `Fresh` and `Rotten` apples, so the first trained model is a lightweight image classifier. It answers `FRESH` or `ROTTEN`; it does not locate a wound. Use the segmentation script only after adding a wound-mask dataset.
 
-## Setup on a training computer
+## Setup on a Training Workstation
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements-train.txt
-python scripts/prepare_apple_freshness_data.py --source "data/external/fresh_rotten_source/Fruit Freshness Dataset/Fruit Freshness Dataset/Apple"
-python scripts/train_external_classifier.py
-python scripts/train_internal.py --csv data/internal/measurements.csv
+
+# 1. Prepare data and train models
+python3 scripts/prepare_apple_freshness_data.py --source "data/external/fresh_rotten_source/Fruit Freshness Dataset/Fruit Freshness Dataset/Apple"
+python3 scripts/train_external_classifier.py
+python3 scripts/train_internal.py --csv data/internal/measurements.csv
+
+# 2. Export PyTorch models to static ONNX for Raspberry Pi 4 OpenCV DNN
+python3 scripts/export_to_onnx.py
 ```
 
-Copy the resulting files into `models/` on the Pi:
+Copy the resulting lightweight models into `models/` on the Raspberry Pi:
 
 ```text
-models/external/best.pt
+models/detector/yolo11n.onnx
+models/external/best.onnx
 models/internal/xgb_internal.joblib
 ```
 
-## Raspberry Pi setup
+## Raspberry Pi 4 Setup & Edge Execution
+
+The Raspberry Pi 4 runs 100% offline edge inference with OpenCV DNN on CPU. A standard USB webcam (`/dev/video0`) is configured as the primary default camera backend.
 
 ```bash
-python -m venv .venv
+# On Raspberry Pi OS:
+sudo bash scripts/setup_rpi4.sh
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
 pip install -r requirements-pi.txt
-python app/pi_inference.py --detector-model models/detector/yolo11n.pt --classifier-model models/external/best.pt
 ```
 
-The detector gives every apple a temporary vision track ID. The encoder must match that ID to the ultrasonic fruit record before sorting. Simultaneous visible apples are supported; touching apples are not.
+### Zero-Argument Execution
 
-For the official Raspberry Pi Camera Module, use the default `--camera-backend auto` (or explicitly use `--camera-backend picamera2`). For a USB webcam, use `--camera-backend opencv --camera 0`.
+Both the vision standalone app and the full multi-station conveyor pipeline auto-resolve the `.onnx` models and default to the USB webcam (`/dev/video0`):
 
-## Sensor CSV format
+```bash
+# Run standalone multi-apple vision tracking
+python3 app/pi_inference.py
+
+# Run full conveyor pipeline (vision + ultrasonic + spatial tracking + sorter ejection)
+python3 app/conveyor_pipeline.py
+```
+
+The detector gives every apple a temporary vision track ID. The encoder matches that ID to the ultrasonic fruit record before sorting. Simultaneous visible apples are supported; touching apples are not.
+
+For headless environments (e.g. SSH sessions without an X11 `DISPLAY`), both applications automatically detect the absence of `DISPLAY` or accept an explicit `--headless` flag to bypass `cv2.imshow`.
+
+If using an official Raspberry Pi Camera Module instead of a USB webcam, pass `--camera-backend picamera2` (or set `backend = "picamera2"` in `config/hardware.toml`).
+
+## Model & Hardware Verification
+
+Before running on live fruit, verify the offline model benchmarks and hardware configuration:
+
+```bash
+# Verify static ONNX models and OpenCV DNN inference
+python3 scripts/verify_models.py
+
+# Benchmark Raspberry Pi 4 CPU cores, memory bandwidth, and peripheral interfaces
+python3 scripts/check_rpi4_hardware.py --mock
+```
+
+## Sensor CSV Format
 
 Required columns:
 
@@ -59,9 +96,9 @@ travel_time_us,received_amplitude,fruit_diameter_mm,weight_g,temperature_c,inter
 
 Use at least several hundred labelled apples if possible, with healthy and damaged fruit from the same variety and storage conditions as the machine.
 
-## GPIO defaults
+## GPIO & Wiring Defaults
 
-Change these for your wiring:
+Configured in `config/hardware.toml`:
 
 ```text
 break_beam_gpio=17
