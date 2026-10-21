@@ -197,6 +197,61 @@ def download_from_roboflow(
     return data_yaml
 
 
+def normalize_data_yaml(data_yaml_path: Path, output_dir: Path) -> Path:
+    """Normalize Roboflow or external data.yaml paths so YOLO and validator can locate train/val/test splits."""
+    if not data_yaml_path.exists():
+        return data_yaml_path
+
+    try:
+        with open(data_yaml_path, "r") as f:
+            meta = yaml.safe_load(f)
+    except Exception as exc:
+        print(f"[!] Warning: could not parse {data_yaml_path} for normalization: {exc}")
+        return data_yaml_path
+
+    if not isinstance(meta, dict):
+        return data_yaml_path
+
+    modified = False
+    output_dir = output_dir.resolve()
+
+    # Normalize base path
+    if meta.get("path") != str(output_dir):
+        meta["path"] = str(output_dir)
+        modified = True
+
+    splits_mapping = {
+        "train": ["train/images", "images/train", "train"],
+        "val": ["valid/images", "val/images", "images/valid", "images/val", "valid", "val"],
+        "test": ["test/images", "images/test", "test"],
+    }
+
+    for split_key, candidate_subpaths in splits_mapping.items():
+        curr_val = meta.get(split_key)
+        resolved_rel = None
+        if curr_val:
+            cleaned = str(curr_val).lstrip("./\\").replace("../", "")
+            cand = output_dir / cleaned
+            if cand.exists():
+                resolved_rel = cleaned
+        if resolved_rel is None:
+            for sub in candidate_subpaths:
+                cand = output_dir / sub
+                if cand.exists():
+                    resolved_rel = sub
+                    break
+        if resolved_rel and meta.get(split_key) != resolved_rel:
+            meta[split_key] = resolved_rel
+            modified = True
+
+    if modified:
+        with open(data_yaml_path, "w") as f:
+            yaml.safe_dump(meta, f, sort_keys=False)
+        print(f"[+] Normalized data.yaml paths for Roboflow export at {data_yaml_path}")
+
+    return data_yaml_path
+
+
 def download_from_url(url: str, output_dir: Path) -> Path:
     """Download and extract a YOLO dataset zip file from a direct URL."""
     print(f"\n[+] Downloading YOLO dataset from: {url} ...")
@@ -221,6 +276,7 @@ def download_from_url(url: str, output_dir: Path) -> Path:
         else:
             raise FileNotFoundError(f"data.yaml not found inside extracted archive at {output_dir}")
 
+    normalize_data_yaml(data_yaml, output_dir)
     print(f"✅ Extracted dataset to: {output_dir}")
     return data_yaml
 
@@ -246,6 +302,8 @@ def validate_dataset(dataset_dir: Path) -> Tuple[bool, Dict[str, Any]]:
         else:
             print(f"❌ ERROR: data.yaml not found in {dataset_dir}")
             return False, {"error": "data.yaml missing"}
+
+    normalize_data_yaml(data_yaml_path, dataset_dir)
 
     try:
         with open(data_yaml_path, "r") as f:

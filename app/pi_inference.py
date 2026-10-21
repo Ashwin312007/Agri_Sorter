@@ -32,7 +32,10 @@ except Exception:
 
 logger = logging.getLogger("pi_inference")
 
-BAD_LABELS = {"rotten", "rot", "bruise", "spot", "mold", "mould", "damage", "damaged"}
+BAD_LABELS = {
+    "rotten", "rot", "bruise", "bruising", "crack", "insect_bite",
+    "spot", "mold", "mould", "damage", "damaged", "russetting"
+}
 
 DEFECT_KEYWORDS = {
     "rot",
@@ -584,7 +587,15 @@ class OpenCVInferenceEngine:
             return [ClassificationResult(names=self.names, top1=top1_id, top1conf=conf, data=probs_dict)]
 
         # Detection task
-        boxes, scores, class_ids = self.detect(source, **kwargs)
+        conf_thresh = kwargs.pop("conf", kwargs.pop("conf_threshold", None))
+        nms_thresh = kwargs.pop("iou", kwargs.pop("nms_threshold", None))
+        classes_filter = kwargs.pop("classes", None)
+        boxes, scores, class_ids = self.detect(
+            source,
+            conf_threshold=conf_thresh,
+            nms_threshold=nms_thresh,
+            classes=classes_filter,
+        )
         boxes_res = BoxesResult(xyxy=boxes, ids=None, confidences=scores, class_ids=class_ids)
         return [DetectionsResult(boxes=boxes_res)]
 

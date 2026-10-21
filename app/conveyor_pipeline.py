@@ -42,8 +42,8 @@ from app.pi_inference import (
 logger = logging.getLogger("conveyor_pipeline")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-BAD_LABELS_REJECT = {"rotten", "rot", "mold", "mould"}
-BAD_LABELS_SECOND = {"bruise", "spot", "damage", "damaged"}
+BAD_LABELS_REJECT = {"rotten", "rot", "mold", "mould", "crack"}
+BAD_LABELS_SECOND = {"bruise", "bruising", "spot", "damage", "damaged", "insect_bite", "russetting"}
 BAD_LABELS = BAD_LABELS_REJECT | BAD_LABELS_SECOND
 
 DEFAULT_DETECTOR_MODEL = (

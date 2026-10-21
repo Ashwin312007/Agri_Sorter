@@ -1,0 +1,11 @@
+{
+  "task": "detect",
+  "names": {
+    "0": "bruising",
+    "1": "crack",
+    "2": "insect_bite",
+    "3": "rotten",
+    "4": "russetting"
+  },
+  "imgsz": 416
+}

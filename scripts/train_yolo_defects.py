@@ -143,6 +143,25 @@ def train_and_export(
     trained_model = YOLO(str(output_pt))
     print(f"[+] Model classes: {trained_model.names}")
 
+    # Export classes metadata JSON for Pi 4 OpenCV DNN
+    try:
+        import json
+        names = trained_model.names
+        meta_dict = {
+            "task": "detect",
+            "names": {int(k): str(v) for k, v in names.items()} if isinstance(names, dict) else list(names),
+            "imgsz": imgsz,
+        }
+        json_path = output_pt.with_suffix(".json")
+        with open(json_path, "w") as jf:
+            json.dump(meta_dict, jf, indent=2)
+        print(f"✅ Saved class metadata JSON to: {json_path}")
+        if output_onnx.with_suffix(".json").resolve() != json_path.resolve():
+            with open(output_onnx.with_suffix(".json"), "w") as jf:
+                json.dump(meta_dict, jf, indent=2)
+    except Exception as exc:
+        print(f"[!] Warning: Could not save class metadata JSON: {exc}")
+
     exported_onnx_path: Optional[Path] = None
     if export_onnx:
         print(f"\n[+] Auto-exporting {output_pt} to Raspberry Pi 4 ONNX format...")
