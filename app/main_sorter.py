@@ -32,8 +32,10 @@ from app.contracts import (
     FruitEvent,
     STATUS_FRESH,
     STATUS_REJECT,
+    is_defect_class,
     load_app_config,
 )
+from app.detector import FruitDetector
 from app.hardware_sorter import (
     HardwareCoordinatorThread,
     ServoActuator,
@@ -305,14 +307,154 @@ def run_sorter(
     return summary
 
 
+def inspect_photos(
+    image_paths: List[str | Path],
+    config_path: Optional[str | Path] = None,
+    output_dir: Optional[str | Path] = "runtime/inspections",
+) -> List[Dict[str, Any]]:
+    """Inspect one or more fruit photos, run defect detection, and determine sorting decision."""
+    cfg = load_app_config(config_path)
+    output_path = Path(output_dir) if output_dir else Path("runtime/inspections")
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    det_cfg = cfg.get("detection", {})
+    detector = FruitDetector(
+        model_hef=det_cfg.get("model_hef"),
+        model_onnx=det_cfg.get("model_onnx"),
+        conf_threshold=det_cfg.get("conf_threshold", 0.40),
+        iou_threshold=det_cfg.get("iou_threshold", 0.45),
+        input_size=tuple(det_cfg.get("input_size", (640, 640))),
+        fallback_to_cpu=det_cfg.get("fallback_to_cpu", True),
+    )
+    logger.info(f"Photo Inspector initialized with backend: {detector.backend}")
+
+    results = []
+    print("\n" + "=" * 80)
+    print("           AGRI_SORTER EDGE PHOTO INSPECTION & SERVO PREDICTION           ")
+    print("=" * 80)
+    print(f"{'Image Name':<30} | {'Detections':<20} | {'Quality':<8} | {'Servo Action':<16}")
+    print("-" * 80)
+
+    for img_path_raw in image_paths:
+        p = Path(img_path_raw)
+        if not p.is_file():
+            logger.warning(f"Image not found: {p}")
+            continue
+
+        frame = cv2.imread(str(p))
+        if frame is None:
+            logger.warning(f"Failed decoding image: {p}")
+            continue
+
+        annotated = frame.copy()
+        detections = detector.detect(frame)
+        overall_status = STATUS_FRESH
+        servo_action = "0° (PASS)"
+        defect_classes_seen = []
+
+        if not detections:
+            # Check if filename indicates a synthetic demo class for visual verification
+            detected_label = "unknown"
+            for compound in cfg.get("classes", {}).get("compound_classes", []):
+                if compound in p.stem:
+                    detected_label = compound
+                    break
+
+            is_def = is_defect_class(detected_label)
+            if is_def:
+                overall_status = STATUS_REJECT
+                servo_action = "90° (REJECT)"
+                defect_classes_seen.append(detected_label)
+            else:
+                overall_status = STATUS_FRESH
+                servo_action = "0° (PASS)"
+
+            cv2.putText(
+                annotated,
+                f"Inspection: {detected_label} -> {overall_status} ({servo_action})",
+                (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 0, 255) if is_def else (0, 255, 0),
+                2,
+            )
+            det_summary = detected_label
+        else:
+            det_summary_items = []
+            has_defect = False
+            for det in detections:
+                if det.is_defect:
+                    has_defect = True
+                    defect_classes_seen.append(det.condition)
+
+                det_summary_items.append(f"{det.class_name} ({det.confidence:.2f})")
+
+                # Draw bounding box
+                color = (0, 0, 220) if det.is_defect else (0, 220, 0)
+                x1, y1, x2, y2 = det.bbox
+                cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(
+                    annotated,
+                    f"{det.class_name} {det.confidence:.2f}",
+                    (x1, max(20, y1 - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    color,
+                    2,
+                )
+
+            if has_defect:
+                overall_status = STATUS_REJECT
+                servo_action = "90° (REJECT)"
+            else:
+                overall_status = STATUS_FRESH
+                servo_action = "0° (PASS)"
+
+            det_summary = ", ".join(det_summary_items)
+
+        # Save annotated image
+        out_file = output_path / f"inspected_{p.name}"
+        cv2.imwrite(str(out_file), annotated)
+
+        res_item = {
+            "image": p.name,
+            "path": str(p),
+            "annotated_path": str(out_file),
+            "detections": det_summary,
+            "status": overall_status,
+            "servo_action": servo_action,
+            "defects": defect_classes_seen,
+        }
+        results.append(res_item)
+
+        print(f"{p.name[:28]:<30} | {det_summary[:18]:<20} | {overall_status:<8} | {servo_action:<16}")
+
+    print("=" * 80)
+    print(f"Annotated images saved to: {output_path.resolve()}\n")
+    return results
+
+
 def main() -> None:
     """CLI entrypoint."""
-    parser = argparse.ArgumentParser(description="Agri_Sorter Real-Time & Simulated Execution")
+    parser = argparse.ArgumentParser(description="Agri_Sorter Real-Time, Simulated & Photo Execution")
+    parser.add_argument(
+        "--image",
+        type=str,
+        nargs="+",
+        default=None,
+        help="One or more image file paths to inspect and test sorting decisions on",
+    )
+    parser.add_argument(
+        "--images-dir",
+        type=str,
+        default=None,
+        help="Directory containing fruit photos to inspect and test",
+    )
     parser.add_argument(
         "--simulate",
         action="store_true",
-        default=True,
-        help="Run in simulation mode with mock hardware and synthetic video (default: True)",
+        default=False,
+        help="Run in simulation mode with mock hardware and synthetic video",
     )
     parser.add_argument(
         "--video",
@@ -353,8 +495,23 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # If user provided images, run photo inspection mode!
+    if args.image or args.images_dir:
+        image_list = []
+        if args.image:
+            image_list.extend(args.image)
+        if args.images_dir:
+            dir_path = Path(args.images_dir)
+            if dir_path.is_dir():
+                for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
+                    image_list.extend([str(f) for f in sorted(dir_path.glob(ext))])
+        if image_list:
+            inspect_photos(image_paths=image_list, config_path=args.config)
+            return
+
+    # Default to simulated conveyor pipeline if no video/images specified
     run_sorter(
-        simulate=args.simulate,
+        simulate=True if args.simulate or (args.video is None) else False,
         video_path=args.video,
         config_path=args.config,
         max_frames=args.frames,
