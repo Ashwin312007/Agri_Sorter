@@ -32,3 +32,4 @@ data/**/*.bmp
 !data/external/apple_defects/README.*
 !models/external/best.pt
 !models/detector/yolo11n.pt
+test_photos/

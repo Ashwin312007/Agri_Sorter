@@ -4,9 +4,15 @@
 classes:
   fruits:
     - apple
-    - banana
+    - guava
     - orange
     - mango
+  extended_fruits:
+    - apple
+    - guava
+    - orange
+    - mango
+    - pomegranate
   conditions:
     - fresh
     - rotten
@@ -20,11 +26,11 @@ classes:
     - apple_bruised
     - apple_scarred
     - apple_bug_bite
-    - banana_fresh
-    - banana_rotten
-    - banana_bruised
-    - banana_scarred
-    - banana_bug_bite
+    - guava_fresh
+    - guava_rotten
+    - guava_bruised
+    - guava_scarred
+    - guava_bug_bite
     - orange_fresh
     - orange_rotten
     - orange_bruised

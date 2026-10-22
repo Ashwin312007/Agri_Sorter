@@ -8,11 +8,16 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-FRUITS = ["apple", "banana", "orange", "mango"]
+FRUITS = ["apple", "guava", "orange", "mango"]
+EXTENDED_FRUITS = ["apple", "guava", "orange", "mango", "pomegranate"]
+LEGACY_FRUITS = ["banana"]
 CONDITIONS = ["fresh", "rotten", "bruised", "scarred", "bug_bite"]
 
 COMPOUND_CLASSES = [
     f"{fruit}_{cond}" for fruit in FRUITS for cond in CONDITIONS
+]
+EXTENDED_COMPOUND_CLASSES = [
+    f"{fruit}_{cond}" for fruit in EXTENDED_FRUITS for cond in CONDITIONS
 ]
 
 STATUS_FRESH = "FRESH"
@@ -33,7 +38,7 @@ def parse_compound_label(label: str) -> Tuple[str, str]:
     """Split compound label into fruit type and defect condition."""
     if "_" in label:
         parts = label.split("_", 1)
-        if parts[0] in FRUITS:
+        if parts[0] in FRUITS or parts[0] in EXTENDED_FRUITS or parts[0] in LEGACY_FRUITS:
             return parts[0], parts[1]
     # Fallback default
     return "unknown", label

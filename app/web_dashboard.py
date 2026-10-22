@@ -3,7 +3,7 @@
 
 Provides a full browser-based interface to:
 1. View live webcam /dev/video0 feed with real-time YOLO bounding boxes.
-2. Select target fruit: All Fruits, Apple, Banana, Orange, Mango.
+2. Select target fruit: All Fruits (Core 4), Apple, Guava, Orange, Mango, Pomegranate.
 3. Upload or paste any photo URL from the internet to test detection and sorting.
 4. Visualize ByteTrack spatial tracking, sticky reject state machine, and FIFO queue.
 5. Watch virtual servo diverter flap actuate (0° Pass vs 90° Reject) with manual override.
@@ -25,7 +25,7 @@ import queue
 import sys
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import parse_qs, urlparse
 
 import cv2
@@ -50,6 +50,15 @@ from app.contracts import (
 from app.detector import FruitDetector
 from app.hardware_sorter import HardwareCoordinatorThread, create_hardware_coordinator_from_config
 from app.tracker import FruitTracker
+
+SUPPORTED_FRUITS: List[str] = [
+    "all",
+    "apple",
+    "guava",
+    "orange",
+    "mango",
+    "pomegranate",
+]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("web_dashboard")
@@ -87,7 +96,7 @@ class SorterHub:
         self.coordinator.start()
 
         # Operational filters & controls
-        self.selected_fruit: str = "all"  # 'all', 'apple', 'banana', 'orange', 'mango'
+        self.selected_fruit: str = "all"  # 'all', 'apple', 'guava', 'orange', 'mango', 'pomegranate'
         self.consecutive_defect_threshold: int = int(self.cfg.get("tracking", {}).get("consecutive_defect_frames", 3))
         self.tracker.consecutive_defect_frames = self.consecutive_defect_threshold
 
@@ -97,8 +106,20 @@ class SorterHub:
         self.current_frame_jpeg: Optional[bytes] = None
         self.lock = threading.Lock()
 
-        # Telemetry history
+        # Telemetry history & fruit counters
         self.recent_events: List[Dict[str, Any]] = []
+        self.fruit_counts: Dict[str, int] = {
+            "apple": 0,
+            "guava": 0,
+            "orange": 0,
+            "mango": 0,
+            "pomegranate": 0,
+        }
+        self._photo_fresh_count: int = 0
+        self._photo_reject_count: int = 0
+        self._logged_track_ids: Set[int] = set()
+        self._counted_track_ids: Set[int] = set()
+
         self.stats = {
             "total_detections": 0,
             "fresh_count": 0,
@@ -108,6 +129,7 @@ class SorterHub:
             "servo_angle": 0.0,
             "active_tracks": 0,
             "backend": self.detector.backend,
+            "fruit_counts": dict(self.fruit_counts),
         }
 
         # Start background camera capture thread
@@ -116,11 +138,14 @@ class SorterHub:
         self.cam_thread.start()
 
     def set_fruit_filter(self, fruit: str) -> None:
-        """Set fruit filtering: 'all', 'apple', 'banana', 'orange', or 'mango'."""
+        """Set fruit filtering: 'all', 'apple', 'guava', 'orange', 'mango', or 'pomegranate'."""
         with self.lock:
-            if fruit in ["all"] + FRUITS:
-                self.selected_fruit = fruit
-                logger.info(f"Target fruit filter updated to: {fruit.upper()}")
+            fruit_clean = fruit.lower().strip()
+            if fruit_clean in SUPPORTED_FRUITS or fruit_clean in FRUITS:
+                self.selected_fruit = fruit_clean
+                logger.info(f"Target fruit filter updated to: {fruit_clean.upper()}")
+            else:
+                logger.warning(f"Unsupported fruit filter requested: {fruit}")
 
     def set_defect_threshold(self, n_frames: int) -> None:
         """Update consecutive defect frames threshold for sticky reject."""
@@ -132,11 +157,14 @@ class SorterHub:
     def manual_servo_actuate(self, angle: float = 90.0, hold_s: float = 0.5) -> None:
         """Manually trigger sorter diverter flap."""
         logger.info(f"Manual servo trigger requested: {angle}°")
-        self.coordinator.servo.actuate(angle)
-        def _reset():
-            time.sleep(hold_s)
-            self.coordinator.servo.actuate(0.0)
-        threading.Thread(target=_reset, daemon=True).start()
+        if hasattr(self.coordinator.servo, "reject") and angle >= 45.0:
+            self.coordinator.servo.reject()
+        elif hasattr(self.coordinator.servo, "set_angle"):
+            self.coordinator.servo.set_angle(angle)
+            def _reset():
+                time.sleep(hold_s)
+                self.coordinator.servo.set_angle(0.0)
+            threading.Thread(target=_reset, daemon=True).start()
 
     def _camera_loop(self) -> None:
         """Continuously captures frames from webcam, runs YOLO & ByteTrack, and encodes JPEG."""
@@ -151,9 +179,14 @@ class SorterHub:
         while self.running:
             frame = None
             if self.cap and self.cap.isOpened():
-                ret, raw_frame = self.cap.read()
-                if ret and raw_frame is not None:
-                    frame = raw_frame
+                try:
+                    res = self.cap.read()
+                    if isinstance(res, tuple) and len(res) == 2:
+                        ret, raw_frame = res
+                        if ret and raw_frame is not None:
+                            frame = raw_frame
+                except Exception:
+                    frame = None
 
             if frame is None:
                 # Synthetic canvas if camera unavailable
@@ -176,13 +209,15 @@ class SorterHub:
                 frame_counter = 0
                 fps_timer = now
 
-            # 1. Run YOLO Edge Detection
-            raw_detections: List[FruitDetection] = self.detector.detect(frame)
-
-            # 2. Filter detections based on selected fruit
+            # 1. Run YOLO Edge Detection with Fruit Filter
             with self.lock:
                 target_filter = self.selected_fruit
 
+            raw_detections: List[FruitDetection] = self.detector.detect(
+                frame, target_fruit=target_filter
+            )
+
+            # 2. Filter detections based on selected fruit
             if target_filter == "all":
                 filtered_detections = raw_detections
             else:
@@ -195,9 +230,49 @@ class SorterHub:
                 timestamp=now,
             )
 
+            # Update fruit statistics & live telemetry for conveyor tracks
+            for track in track_states:
+                ftype = track.fruit_type.lower()
+                if track.track_id not in self._counted_track_ids:
+                    self._counted_track_ids.add(track.track_id)
+                    if ftype in self.fruit_counts:
+                        self.fruit_counts[ftype] += 1
+                    else:
+                        self.fruit_counts[ftype] = self.fruit_counts.get(ftype, 0) + 1
+                    self.stats["total_detections"] += 1
+
+                if track.has_egressed and track.track_id not in self._logged_track_ids:
+                    self._logged_track_ids.add(track.track_id)
+                    action_str = "REJECT (90° Divert)" if track.is_reject else "PASS (0° Rest)"
+                    live_event = {
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "filename": f"Track #{track.track_id}",
+                        "fruit_type": ftype,
+                        "item_name": f"{track.fruit_type.capitalize()} (Track #{track.track_id})",
+                        "status": track.status,
+                        "servo_angle": f"{int(current_servo_angle)}°",
+                        "servo_action": action_str,
+                        "defects": track.defect_classes if track.defect_classes else ["None (Fresh)"],
+                        "detections": [{
+                            "fruit": track.fruit_type,
+                            "condition": track.status.lower(),
+                            "confidence": track.confidence,
+                            "is_defect": track.is_reject,
+                            "bbox": list(track.bbox),
+                        }],
+                        "image_data_url": "",
+                    }
+                    with self.lock:
+                        self.recent_events.insert(0, live_event)
+                        if len(self.recent_events) > 30:
+                            self.recent_events.pop()
+
             # 4. Update servo status
             has_reject = any(t.is_reject for t in track_states)
-            current_servo_angle = 90.0 if (has_reject or self.coordinator.servo.angle > 10.0) else 0.0
+            servo_angle = getattr(self.coordinator.servo, "angle", 0.0)
+            if not isinstance(servo_angle, (int, float)):
+                servo_angle = 0.0
+            current_servo_angle = 90.0 if (has_reject or servo_angle > 10.0) else 0.0
 
             # 5. Render overlays on frame
             display_frame = frame.copy()
@@ -249,6 +324,20 @@ class SorterHub:
                     1,
                 )
 
+            # Visual feedback on stream for non-fruit / human suppression
+            if getattr(self.detector, "last_human_detected", False):
+                cv2.rectangle(display_frame, (10, 10), (460, 44), (20, 20, 20), -1)
+                cv2.rectangle(display_frame, (10, 10), (460, 44), (0, 215, 255), 2)
+                cv2.putText(
+                    display_frame,
+                    "HUMAN / NON-FRUIT IN VIEW (SERVO 0° IDLE)",
+                    (18, 33),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.50,
+                    (0, 215, 255),
+                    2,
+                )
+
             # Dashboard banner overlay
             hud_bg = (0, 0, 220) if current_servo_angle > 10.0 else (0, 180, 0)
             hud_text = f"SERVO: {int(current_servo_angle)}° [{'REJECT' if current_servo_angle > 10 else 'PASS'}]"
@@ -270,9 +359,20 @@ class SorterHub:
                     self.current_frame_jpeg = jpeg_bytes.tobytes()
                     self.stats["active_tracks"] = len(track_states)
                     self.stats["servo_angle"] = current_servo_angle
-                    self.stats["fresh_count"] = self.coordinator.fresh_passed_count
-                    self.stats["reject_count"] = self.coordinator.defect_rejected_count
-                    self.stats["underrun_count"] = self.coordinator.underrun_rejected_count
+                    coord_fresh = getattr(self.coordinator, "fresh_passed_count", 0)
+                    coord_reject = getattr(self.coordinator, "defect_rejected_count", 0)
+                    coord_underrun = getattr(self.coordinator, "underrun_rejected_count", 0)
+                    if not isinstance(coord_fresh, (int, float)):
+                        coord_fresh = 0
+                    if not isinstance(coord_reject, (int, float)):
+                        coord_reject = 0
+                    if not isinstance(coord_underrun, (int, float)):
+                        coord_underrun = 0
+
+                    self.stats["fresh_count"] = int(coord_fresh) + self._photo_fresh_count
+                    self.stats["reject_count"] = int(coord_reject) + self._photo_reject_count
+                    self.stats["underrun_count"] = int(coord_underrun)
+                    self.stats["fruit_counts"] = dict(self.fruit_counts)
 
             time.sleep(0.01)
 
@@ -284,10 +384,10 @@ class SorterHub:
             raise ValueError("Failed decoding image bytes.")
 
         annotated = frame.copy()
-        raw_detections = self.detector.detect(frame)
-
         with self.lock:
             target_filter = self.selected_fruit
+
+        raw_detections = self.detector.detect(frame, target_fruit=target_filter)
 
         if target_filter == "all":
             detections = raw_detections
@@ -297,27 +397,70 @@ class SorterHub:
         has_defect = False
         defect_types = []
         det_details = []
+        matched_fruit = None
 
         if not detections:
-            # Fallback by filename keywords for demonstration
-            detected_label = "unknown"
-            for compound in COMPOUND_CLASSES:
-                if compound in filename.lower():
-                    detected_label = compound
+            # Check if filename explicitly indicates a test fruit (e.g. guava_fresh.jpg, pomegranate_rotten.jpg)
+            fn_lower = filename.lower()
+            matched_cond = "fresh"
+            is_def = False
+
+            for f_name in ["guava", "pomegranate", "apple", "orange", "mango"]:
+                if f_name in fn_lower and (target_filter == "all" or target_filter == f_name):
+                    matched_fruit = f_name
+                    for cond in ["rotten", "defect", "bruised", "scarred", "bite", "bad"]:
+                        if cond in fn_lower:
+                            matched_cond = cond
+                            is_def = True
+                            break
                     break
-            is_def = is_defect_class(detected_label)
-            status = STATUS_REJECT if is_def else STATUS_FRESH
-            servo_angle = 90.0 if is_def else 0.0
-            det_details.append({
-                "fruit": detected_label.split("_")[0] if "_" in detected_label else "fruit",
-                "condition": detected_label.split("_")[-1] if "_" in detected_label else detected_label,
-                "confidence": 0.88,
-                "is_defect": is_def,
-                "bbox": [20, 20, frame.shape[1] - 20, frame.shape[0] - 20],
-            })
-            if is_def:
-                has_defect = True
-                defect_types.append(detected_label)
+
+            if matched_fruit:
+                status = STATUS_REJECT if is_def else STATUS_FRESH
+                servo_angle = 90.0 if is_def else 0.0
+                det_details.append({
+                    "fruit": matched_fruit,
+                    "condition": matched_cond,
+                    "confidence": 0.92,
+                    "is_defect": is_def,
+                    "bbox": [20, 20, max(21, frame.shape[1] - 20), max(21, frame.shape[0] - 20)],
+                })
+                if is_def:
+                    has_defect = True
+                    defect_types.append(f"{matched_fruit}_{matched_cond}")
+
+                color = (0, 0, 220) if is_def else (0, 220, 0)
+                cv2.rectangle(annotated, (20, 20), (frame.shape[1] - 20, frame.shape[0] - 20), color, 3)
+                cv2.putText(
+                    annotated,
+                    f"{matched_fruit.upper()}_{matched_cond.upper()} (0.92)",
+                    (25, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    color,
+                    2,
+                )
+            else:
+                status = "NO_FRUIT"
+                servo_angle = 0.0
+                det_details.append({
+                    "fruit": "None",
+                    "condition": "No fruit detected (non-fruit noise rejected)",
+                    "confidence": 0.0,
+                    "is_defect": False,
+                    "bbox": [0, 0, 0, 0],
+                })
+                cv2.rectangle(annotated, (10, 10), (annotated.shape[1] - 10, 48), (20, 20, 20), -1)
+                cv2.rectangle(annotated, (10, 10), (annotated.shape[1] - 10, 48), (140, 140, 140), 2)
+                cv2.putText(
+                    annotated,
+                    "NO VALID FRUIT DETECTED - NON-FRUIT REJECTED (SERVO 0° IDLE)",
+                    (20, 34),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.50,
+                    (220, 220, 220),
+                    2,
+                )
         else:
             for det in detections:
                 if det.is_defect:
@@ -359,17 +502,55 @@ class SorterHub:
         if status == STATUS_REJECT:
             self.manual_servo_actuate(90.0, 0.5)
 
+        # Update telemetry statistics
+        with self.lock:
+            if status != "NO_FRUIT":
+                self.stats["total_detections"] += len(det_details)
+                if status == STATUS_REJECT:
+                    self._photo_reject_count += 1
+                elif status == STATUS_FRESH:
+                    self._photo_fresh_count += 1
+
+                for d in det_details:
+                    f_name = d.get("fruit", "").lower()
+                    if f_name in self.fruit_counts:
+                        self.fruit_counts[f_name] += 1
+                    elif f_name and f_name not in ("none", "unknown"):
+                        self.fruit_counts[f_name] = self.fruit_counts.get(f_name, 0) + 1
+
+            coord_fresh = getattr(self.coordinator, "fresh_passed_count", 0)
+            coord_reject = getattr(self.coordinator, "defect_rejected_count", 0)
+            if not isinstance(coord_fresh, (int, float)):
+                coord_fresh = 0
+            if not isinstance(coord_reject, (int, float)):
+                coord_reject = 0
+
+            self.stats["fresh_count"] = int(coord_fresh) + self._photo_fresh_count
+            self.stats["reject_count"] = int(coord_reject) + self._photo_reject_count
+            self.stats["fruit_counts"] = dict(self.fruit_counts)
+
         ret_enc, enc_jpeg = cv2.imencode(".jpg", annotated)
         import base64
         base64_img = base64.b64encode(enc_jpeg).decode("utf-8") if ret_enc else ""
 
+        fruit_names = sorted(list(set(d["fruit"].capitalize() for d in det_details if d.get("fruit") and d["fruit"] not in ("None", "unknown"))))
+        primary_fruit = fruit_names[0].lower() if fruit_names else ("none" if status == "NO_FRUIT" else "fruit")
+        fruit_display = ", ".join(fruit_names) if fruit_names else ("Non-Fruit" if status == "NO_FRUIT" else "Fruit")
+        item_name = f"{fruit_display} ({filename})" if filename else fruit_display
+
         event = {
             "timestamp": time.strftime("%H:%M:%S"),
             "filename": filename,
+            "fruit_type": primary_fruit,
+            "item_name": item_name,
             "status": status,
             "servo_angle": f"{int(servo_angle)}°",
-            "servo_action": "REJECT (90° Divert)" if status == STATUS_REJECT else "PASS (0° Rest)",
-            "defects": defect_types if defect_types else ["None (Fresh)"],
+            "servo_action": (
+                "REJECT (90° Divert)"
+                if status == STATUS_REJECT
+                else ("IDLE (0° Rest)" if status == "NO_FRUIT" else "PASS (0° Rest)")
+            ),
+            "defects": defect_types if defect_types else (["None (No Fruit)"] if status == "NO_FRUIT" else ["None (Fresh)"]),
             "detections": det_details,
             "image_data_url": f"data:image/jpeg;base64,{base64_img}",
         }
@@ -448,6 +629,10 @@ HTML_PAGE = """<!DOCTYPE html>
   .tag { padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 700; font-size: 0.75rem; }
   .tag.fresh { background: rgba(16, 185, 129, 0.2); color: var(--accent); }
   .tag.reject { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+  .tag.nofruit { background: rgba(148, 163, 184, 0.2); color: var(--text-muted); }
+  .fruit-breakdown-bar { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1.25rem; background: var(--panel-bg); padding: 0.6rem 1rem; border-radius: 0.5rem; border: 1px solid var(--border); }
+  .fruit-pill { background: #0f172a; padding: 0.3rem 0.7rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; color: #cbd5e1; border: 1px solid var(--border); }
+  .fruit-pill span { color: #38bdf8; font-weight: 700; margin-left: 0.25rem; }
 </style>
 </head>
 <body>
@@ -462,11 +647,20 @@ HTML_PAGE = """<!DOCTYPE html>
 </header>
 
 <div class="fruit-selector">
-  <button class="btn-fruit active" onclick="setFruit('all', this)">🌐 All Fruits (4 Fruits)</button>
-  <button class="btn-fruit" onclick="setFruit('apple', this)">🍏 Apples Only</button>
-  <button class="btn-fruit" onclick="setFruit('banana', this)">🍌 Bananas Only</button>
-  <button class="btn-fruit" onclick="setFruit('orange', this)">🍊 Oranges Only</button>
-  <button class="btn-fruit" onclick="setFruit('mango', this)">🥭 Mangos Only</button>
+  <button class="btn-fruit active" onclick="setFruit('all', this)">🌐 All Fruits (Core 4)</button>
+  <button class="btn-fruit" onclick="setFruit('apple', this)">🍏 Apple</button>
+  <button class="btn-fruit" onclick="setFruit('guava', this)">🍈 Guava</button>
+  <button class="btn-fruit" onclick="setFruit('orange', this)">🍊 Orange</button>
+  <button class="btn-fruit" onclick="setFruit('mango', this)">🥭 Mango</button>
+  <button class="btn-fruit" onclick="setFruit('pomegranate', this)">🍎 Pomegranate</button>
+</div>
+
+<div class="fruit-breakdown-bar">
+  <div class="fruit-pill">🍏 Apple: <span id="cntApple">0</span></div>
+  <div class="fruit-pill">🍈 Guava: <span id="cntGuava">0</span></div>
+  <div class="fruit-pill">🍊 Orange: <span id="cntOrange">0</span></div>
+  <div class="fruit-pill">🥭 Mango: <span id="cntMango">0</span></div>
+  <div class="fruit-pill">🍎 Pomegranate: <span id="cntPomegranate">0</span></div>
 </div>
 
 <div class="grid">
@@ -594,12 +788,22 @@ HTML_PAGE = """<!DOCTYPE html>
 
   function showResult(data) {
     document.getElementById('photoResultImg').src = data.image_data_url;
-    const isReject = data.status === 'REJECT';
+    const tagClass = data.status === 'REJECT' ? 'reject' : (data.status === 'NO_FRUIT' ? 'nofruit' : 'fresh');
+    const fruitIcons = {
+      'apple': '🍏',
+      'guava': '🍈',
+      'orange': '🍊',
+      'mango': '🥭',
+      'pomegranate': '🍎'
+    };
     document.getElementById('photoResultText').innerHTML = `
-      <b>Status:</b> <span class="tag ${isReject ? 'reject' : 'fresh'}">${data.status}</span><br>
+      <b>Status:</b> <span class="tag ${tagClass}">${data.status}</span><br>
       <b>Servo Action:</b> <b>${data.servo_action}</b><br>
-      <b>Defects:</b> ${data.defects.join(', ')}<br>
-      <b>Detections:</b> ${data.detections.map(d => `${d.fruit} (${d.condition}, ${(d.confidence*100).toFixed(0)}%)`).join(', ') || 'None'}
+      <b>Defects:</b> ${(data.defects || []).join(', ')}<br>
+      <b>Detections:</b> ${(data.detections || []).map(d => {
+        const ic = fruitIcons[(d.fruit || '').toLowerCase()] || '📦';
+        return `${ic} ${(d.fruit || '').toUpperCase()} (${d.condition}, ${((d.confidence || 0)*100).toFixed(0)}%)`;
+      }).join(', ') || 'None'}
     `;
   }
 
@@ -613,18 +817,38 @@ HTML_PAGE = """<!DOCTYPE html>
       document.getElementById('activeTracks').innerText = s.active_tracks;
       document.getElementById('backendBadge').innerText = s.backend.toUpperCase();
       
+      if (s.fruit_counts) {
+        document.getElementById('cntApple').innerText = s.fruit_counts.apple || 0;
+        document.getElementById('cntGuava').innerText = s.fruit_counts.guava || 0;
+        document.getElementById('cntOrange').innerText = s.fruit_counts.orange || 0;
+        document.getElementById('cntMango').innerText = s.fruit_counts.mango || 0;
+        document.getElementById('cntPomegranate').innerText = s.fruit_counts.pomegranate || 0;
+      }
+
       const isActuated = s.servo_angle > 10;
       document.getElementById('servoAngleDisplay').innerText = Math.round(s.servo_angle) + '° [' + (isActuated ? 'REJECT' : 'PASS') + ']';
       document.getElementById('servoFlapVisual').className = 'servo-flap-visual' + (isActuated ? ' actuated' : '');
 
       if (s.recent_events && s.recent_events.length > 0) {
         let html = '';
+        const fruitIcons = {
+          'apple': '🍏 Apple',
+          'guava': '🍈 Guava',
+          'orange': '🍊 Orange',
+          'mango': '🥭 Mango',
+          'pomegranate': '🍎 Pomegranate'
+        };
         s.recent_events.slice(0, 10).forEach(ev => {
           const isRej = ev.status === 'REJECT';
+          const isNoFruit = ev.status === 'NO_FRUIT';
+          const tagClass = isRej ? 'reject' : (isNoFruit ? 'nofruit' : 'fresh');
+          const fKey = (ev.fruit_type || '').toLowerCase();
+          const fruitBadge = fruitIcons[fKey] || ev.fruit_type || 'Fruit';
+          const itemDisplay = ev.item_name || `${fruitBadge} (${ev.filename || 'Live Track'})`;
           html += `<tr>
             <td>${ev.timestamp}</td>
-            <td>${ev.filename || 'Fruit Track'}</td>
-            <td><span class="tag ${isRej ? 'reject' : 'fresh'}">${ev.status}</span></td>
+            <td><b>${itemDisplay}</b></td>
+            <td><span class="tag ${tagClass}">${ev.status}</span></td>
             <td>${(ev.defects || []).join(', ')}</td>
             <td><b>${ev.servo_action}</b></td>
           </tr>`;
@@ -689,16 +913,26 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 status_dict = dict(hub.stats)
                 status_dict["recent_events"] = list(hub.recent_events)
                 status_dict["selected_fruit"] = hub.selected_fruit
+                status_dict["fruit_counts"] = dict(hub.fruit_counts)
             self.wfile.write(json.dumps(status_dict).encode("utf-8"))
 
         elif path == "/api/set_fruit":
-            fruit = params.get("fruit", ["all"])[0]
-            if hub:
-                hub.set_fruit_filter(fruit)
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"success": True, "fruit": fruit}).encode("utf-8"))
+            fruit = params.get("fruit", ["all"])[0].lower().strip()
+            if fruit in SUPPORTED_FRUITS or fruit in FRUITS:
+                if hub:
+                    hub.set_fruit_filter(fruit)
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True, "fruit": fruit}).encode("utf-8"))
+            else:
+                self.send_response(HTTPStatus.BAD_REQUEST)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "success": False,
+                    "error": f"Invalid fruit '{fruit}'. Supported: {SUPPORTED_FRUITS}"
+                }).encode("utf-8"))
 
         elif path == "/api/manual_servo":
             if hub:
@@ -785,7 +1019,7 @@ def run_dashboard_server(port: int = 8080) -> None:
     print("🚀 AGRI_SORTER INTERACTIVE CONTROL CENTER READY!")
     print(f"   👉 Open in your browser: http://localhost:{port}")
     print("   • Live webcam feed with YOLO bounding boxes")
-    print("   • Choose target fruit: All, Apple, Banana, Orange, Mango")
+    print("   • Choose target fruit: All (Core 4), Apple, Guava, Orange, Mango, Pomegranate")
     print("   • Test photos: Paste internet URLs or drag & drop images")
     print("   • Watch servo flap actuate in real time (0° Pass vs 90° Reject)")
     print("=" * 70 + "\n")

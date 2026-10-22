@@ -1,17 +1,33 @@
 # Agri_Sorter Multi-Fruit Dataset Pipeline & Conveyor Augmentations
 
-This directory houses the dataset pipeline, schema definitions, and raw data integration workflows for the **Agri_Sorter** automated multi-fruit defect sorting system.
+This directory houses the dataset pipeline, schema definitions, catalog registry, and data ingestion workflows for the **Agri_Sorter** automated multi-fruit defect sorting system.
 
-The pipeline prepares high-quality YOLO-formatted datasets targeting real-time edge inference on **Raspberry Pi 4** and **Hailo-8L AI HAT** accelerators.
+The pipeline prepares high-quality YOLO-formatted datasets targeting real-time edge inference on **Raspberry Pi 4** and the **Hailo-8L AI HAT** (13 TOPS INT8) accelerator.
 
 ---
 
-## 1. Multi-Fruit Class Taxonomy (20 Compound Classes)
+## 1. Multi-Fruit Class Taxonomy & Supported Fruits
 
-Agri_Sorter classifies four fruit types across five distinct conditions into **20 compound classes** as defined in [`app/contracts.py`](file:///home/taiki/Agri_Sorter/app/contracts.py):
+Agri_Sorter classifies target fruits across five distinct conditions into standardized compound classes:
 
 $$\text{Class Name} = \langle\text{fruit}\rangle\_\langle\text{condition}\rangle$$
 
+### Supported Fruits:
+1. **Apple** (`apple`)
+2. **Guava** (`guava`)
+3. **Orange** (`orange`)
+4. **Mango** (`mango`)
+5. **Pomegranate** (`pomegranate`)
+6. **Banana** (`banana` - legacy support)
+
+### Standard Conditions:
+- `fresh` (PASS - Fruit proceeds along primary conveyor to packaging)
+- `rotten` (REJECT - Active fungal decay, bacterial blight, stylar rot, mold, soft rot)
+- `bruised` (REJECT - Impact depression, mechanical compression, sapburn)
+- `scarred` (REJECT - Russeting, corky scab, red algal rust, canker, healed skin lesions)
+- `bug_bite` (REJECT - Insect puncture, fruit fly oviposition, caterpillar borer hole, larvae)
+
+### Canonical Compound Class Table (20 Primary Edge Classes):
 | Class ID | Compound Class Name | Fruit Type | Condition | Sorter Decision | Action / Mechanism |
 | :---: | :--- | :--- | :--- | :---: | :--- |
 | **0** | `apple_fresh` | Apple | Fresh | **PASS** (FRESH) | Proceeds along main conveyor to packaging |
@@ -19,11 +35,11 @@ $$\text{Class Name} = \langle\text{fruit}\rangle\_\langle\text{condition}\rangle
 | **2** | `apple_bruised` | Apple | Bruised | **REJECT** | Diverter servo actuated to reject chute |
 | **3** | `apple_scarred` | Apple | Scarred | **REJECT** | Diverter servo actuated to reject chute |
 | **4** | `apple_bug_bite` | Apple | Bug Bite | **REJECT** | Diverter servo actuated to reject chute |
-| **5** | `banana_fresh` | Banana | Fresh | **PASS** (FRESH) | Proceeds along main conveyor to packaging |
-| **6** | `banana_rotten` | Banana | Rotten | **REJECT** | Diverter servo actuated to reject chute |
-| **7** | `banana_bruised` | Banana | Bruised | **REJECT** | Diverter servo actuated to reject chute |
-| **8** | `banana_scarred` | Banana | Scarred | **REJECT** | Diverter servo actuated to reject chute |
-| **9** | `banana_bug_bite` | Banana | Bug Bite | **REJECT** | Diverter servo actuated to reject chute |
+| **5** | `guava_fresh` | Guava | Fresh | **PASS** (FRESH) | Proceeds along main conveyor to packaging |
+| **6** | `guava_rotten` | Guava | Rotten | **REJECT** | Diverter servo actuated to reject chute |
+| **7** | `guava_bruised` | Guava | Bruised | **REJECT** | Diverter servo actuated to reject chute |
+| **8** | `guava_scarred` | Guava | Scarred | **REJECT** | Diverter servo actuated to reject chute |
+| **9** | `guava_bug_bite` | Guava | Bug Bite | **REJECT** | Diverter servo actuated to reject chute |
 | **10** | `orange_fresh` | Orange | Fresh | **PASS** (FRESH) | Proceeds along main conveyor to packaging |
 | **11** | `orange_rotten` | Orange | Rotten | **REJECT** | Diverter servo actuated to reject chute |
 | **12** | `orange_bruised` | Orange | Bruised | **REJECT** | Diverter servo actuated to reject chute |
@@ -35,80 +51,115 @@ $$\text{Class Name} = \langle\text{fruit}\rangle\_\langle\text{condition}\rangle
 | **18** | `mango_scarred` | Mango | Scarred | **REJECT** | Diverter servo actuated to reject chute |
 | **19** | `mango_bug_bite` | Mango | Bug Bite | **REJECT** | Diverter servo actuated to reject chute |
 
----
-
-## 2. Public Dataset Sources & Ingestion
-
-The pipeline (`scripts/dataset_pipeline.py`) can download and merge multiple public datasets from Roboflow Universe, Kaggle, and direct web mirrors:
-
-### A. Roboflow Universe Datasets
-- **Apple Defects (MIT License)**: [Roboflow Universe `jaiveer-singh-outlook-in/apple-defects`](https://universe.roboflow.com/jaiveer-singh-outlook-in/apple-defects)
-  - Features: Rot, Bruising, Insect bites, Scars (russetting/cracks).
-- **Apple Defect Detection (`apple-defects-yafjq`)**: [Roboflow Universe](https://universe.roboflow.com/)
-  - Features: Fresh apples, rot, mechanical bruising.
-- **Banana Quality & Defect Detection (CC-BY 4.0)**: Roboflow Universe banana ripeness & peel defect projects.
-- **Citrus & Orange Disease Detection (CC-BY 4.0)**: Roboflow Universe citrus greening, canker, and mold projects.
-- **Mango Quality & Anthracnose (CC-BY 4.0)**: Roboflow Universe mango surface blemish and stem rot projects.
-
-### B. Kaggle Public Datasets
-- **Fruits Fresh and Rotten (`sriramr/fruits-fresh-and-rotten-for-classification`)**:
-  - Contains fresh and rotten apples, bananas, and oranges.
-  - License: CC BY-SA 4.0.
-- **Fresh and Stale Fruit & Vegetables (`raghavrpotdar/fresh-and-stale-images-of-fruits-and-vegetables`)**:
-  - Multi-class freshness dataset for commercial sorting.
-  - License: CC0: Public Domain.
-- **Fruit Defect Detection YOLO Dataset (`shashwatwork/fruit-defect-detection`)**:
-  - Bounding box annotations for external fruit surface anomalies.
-  - License: Open Data Commons Attribution License (ODC-By).
+*Extended Classes (IDs 20–29)*: Pomegranate (`pomegranate_fresh` .. `pomegranate_bug_bite`) and legacy Banana (`banana_fresh` .. `banana_bug_bite`) are registered in `ALL_COMPOUND_CLASSES` and dynamically indexed when running with `--dataset-preset all` or `--dataset-preset pomegranate`.
 
 ---
 
-## 3. Dataset Licensing & Compliance
+## 2. User-Provided Dataset Catalog (18 Registered Sources + Local)
 
-When training models with public data, comply with individual source licenses:
-- **CC-BY 4.0 (Creative Commons Attribution 4.0 International)**:
-  - Permits commercial use, sharing, and modification.
-  - Requires explicit credit to dataset creators and notice of changes.
-- **CC BY-SA 4.0 (ShareAlike)**:
-  - Derivative works and modifications must be distributed under compatible terms.
-- **MIT License**:
-  - Permissive free software license granting unrestricted commercial and non-commercial rights.
-- **CC0 1.0 (Public Domain Dedication)**:
-  - Completely unrestricted worldwide use with no attribution obligations.
+The dataset catalog registered in [`scripts/dataset_pipeline.py`](file:///home/taiki/Agri_Sorter/scripts/dataset_pipeline.py) strictly integrates the user-specified datasets from Roboflow Universe and Kaggle:
 
----
+### A. Roboflow Universe Datasets (10 Sources)
+| Catalog ID | Workspace | Project | Target Fruit | Preset | License | Universe Web URL |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `rf_guava_wedlv` | `guava-wedlv` | `guava-3hezg` | Guava | `guava` | CC BY 4.0 | [https://universe.roboflow.com/guava-wedlv/guava-3hezg](https://universe.roboflow.com/guava-wedlv/guava-3hezg) |
+| `rf_guava_thao` | `thao-ulmra` | `guava-qnkee-1uz3i` | Guava | `guava` | CC BY 4.0 | [https://universe.roboflow.com/thao-ulmra/guava-qnkee-1uz3i](https://universe.roboflow.com/thao-ulmra/guava-qnkee-1uz3i) |
+| `rf_apple_defect` | `appledefectsdetection` | `apple-defect-detection-pkekm` | Apple | `apple` | CC BY 4.0 | [https://universe.roboflow.com/appledefectsdetection/apple-defect-detection-pkekm](https://universe.roboflow.com/appledefectsdetection/apple-defect-detection-pkekm) |
+| `rf_apple_surface` | `applesort-esgll` | `apple_surface_defects` | Apple | `apple` | CC BY 4.0 | [https://universe.roboflow.com/applesort-esgll/apple_surface_defects](https://universe.roboflow.com/applesort-esgll/apple_surface_defects) |
+| `rf_mango_defect` | `kaycee-kaye-y-villanueva-mzmks` | `mango-defect-detection` | Mango | `mango` | CC BY 4.0 | [https://universe.roboflow.com/kaycee-kaye-y-villanueva-mzmks/mango-defect-detection](https://universe.roboflow.com/kaycee-kaye-y-villanueva-mzmks/mango-defect-detection) |
+| `rf_mango_grading` | `mangoclass` | `mangograding` | Mango | `mango` | CC BY 4.0 | [https://universe.roboflow.com/mangoclass/mangograding](https://universe.roboflow.com/mangoclass/mangograding) |
+| `rf_orange_defect` | `mydetect-o2wvw` | `orange-defect` | Orange | `orange` | CC BY 4.0 | [https://universe.roboflow.com/mydetect-o2wvw/orange-defect](https://universe.roboflow.com/mydetect-o2wvw/orange-defect) |
+| `rf_orange_inspection` | `marcel-craig` | `orange-inspection` | Orange | `orange` | CC BY 4.0 | [https://universe.roboflow.com/marcel-craig/orange-inspection](https://universe.roboflow.com/marcel-craig/orange-inspection) |
+| `rf_pomegranate_gq` | `orin-f84rr` | `pomegranate-gqopm` | Pomegranate | `pomegranate` | CC BY 4.0 | [https://universe.roboflow.com/orin-f84rr/pomegranate-gqopm](https://universe.roboflow.com/orin-f84rr/pomegranate-gqopm) |
+| `rf_pomegranate_rj` | `projects-jn6uf` | `pomegranate-rjwdq` | Pomegranate | `pomegranate` | CC BY 4.0 | [https://universe.roboflow.com/projects-jn6uf/pomegranate-rjwdq](https://universe.roboflow.com/projects-jn6uf/pomegranate-rjwdq) |
 
-## 4. Label Mapping Logic
+### B. Kaggle Datasets (8 Sources)
+| Catalog ID | Kaggle Slug | Target Fruit | Preset | License | Kaggle Web URL |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `kg_fruit_disease` | `ateebnoone/fruits-dataset-for-fruit-disease-classification` | Multi | `all` | CC0 | [Kaggle fruits-dataset-for-fruit-disease-classification](https://www.kaggle.com/datasets/ateebnoone/fruits-dataset-for-fruit-disease-classification) |
+| `kg_fruits_diseases` | `amdatas/fruits-diseases-classification-dataset` | Multi | `all` | CC BY-SA 4.0 | [Kaggle fruits-diseases-classification-dataset](https://www.kaggle.com/datasets/amdatas/fruits-diseases-classification-dataset) |
+| `kg_fresh_rotten` | `sriramr/fruits-fresh-and-rotten-for-classification` | Multi | `all` | CC BY-SA 4.0 | [Kaggle fruits-fresh-and-rotten-for-classification](https://www.kaggle.com/datasets/sriramr/fruits-fresh-and-rotten-for-classification) |
+| `kg_fresh_stale` | `swoyam2609/fresh-and-stale-classification` | Multi | `all` | CC0 | [Kaggle fresh-and-stale-classification](https://www.kaggle.com/datasets/swoyam2609/fresh-and-stale-classification) |
+| `kg_pomegranate_disease` | `sujaykapadnis/pomegranate-fruit-diseases-dataset` | Pomegranate | `pomegranate` | CC BY 4.0 | [Kaggle pomegranate-fruit-diseases-dataset](https://www.kaggle.com/datasets/sujaykapadnis/pomegranate-fruit-diseases-dataset) |
+| `kg_guava_dataset` | `noamaanabdulazeem/guava-dataset` | Guava | `guava` | CC0 | [Kaggle guava-dataset](https://www.kaggle.com/datasets/noamaanabdulazeem/guava-dataset) |
+| `kg_orange_dataset` | `sgandhi2003/orange-fruit-dataset` | Orange | `orange` | CC BY 4.0 | [Kaggle orange-fruit-dataset](https://www.kaggle.com/datasets/sgandhi2003/orange-fruit-dataset) |
+| `kg_fruits_360` | `moltean/fruits` | Multi | `all` | CC BY-SA 4.0 | [Kaggle fruits](https://www.kaggle.com/datasets/moltean/fruits) |
 
-Incoming datasets frequently use divergent naming conventions (e.g., `russetting`, `canker`, `anthracnose`, `green_mold`). The pipeline includes a canonical synonym resolution engine (`LabelMapper`):
-
-### Synonym & Ontology Mappings:
-
-1. **Condition Mappings**:
-   - **`fresh`**: `fresh`, `good`, `clean`, `healthy`, `sound`, `ripe`, `ripened`, `grade_a`, `normal`, `perfect`, `undamaged`.
-   - **`rotten`**: `rot`, `rotten`, `decay`, `decayed`, `mold`, `moldy`, `bad`, `anthracnose`, `spoil`, `spoiled`, `breakdown`, `fungal`, `necrotic`, `black_rot`, `bitter_rot`, `stem_end_rot`, `cigar_end_rot`, `overripe`, `blight`, `mildew`.
-   - **`bruised`**: `bruise`, `bruised`, `bruising`, `impact`, `pressure`, `indent`, `sapburn`, `soft`, `damage`, `squished`, `crush`, `mechanical_injury`, `mechanical_damage`.
-   - **`scarred`**: `scar`, `scarred`, `scab`, `scratch`, `russet`, `russetting`, `crack`, `cracked`, `canker`, `blotch`, `blemish`, `scuff`, `rust`, `cork`, `corky`, `peel_blemish`, `wind_scar`, `skin_defect`, `melanose`, `greening`, `sigatoka`.
-   - **`bug_bite`**: `bug`, `bug_bite`, `bugbite`, `bite`, `worm`, `wormhole`, `insect`, `insect_bite`, `pest`, `weevil`, `fly`, `fruit_fly`, `moth`, `codling_moth`, `puncture`, `borer`, `larva`, `thrip`, `thrips`, `mite`, `scale_insect`, `aphid`.
-
-2. **Fruit Disambiguation & `--fruit-hint`**:
-   - If incoming labels include the fruit name (e.g. `rotten_banana`, `Fresh Apple`), the compound class is deduced automatically.
-   - For single-fruit datasets where labels only specify defects (e.g., `rot`, `bruise`), provide `--fruit-hint apple` (or `banana`, `orange`, `mango`).
-
-3. **Custom Label Overrides**:
-   You can provide a JSON or YAML label map override via `--label-map <path>`:
-   ```yaml
-   # custom_label_map.yaml
-   my_custom_class_1: apple_scarred
-   mold_spot: orange_rotten
-   fruit_borer: mango_bug_bite
-   ```
+### C. Preserved Local Dataset
+- **Local Apple Defects**: Located at `data/external/apple_defects` (Roboflow project `jaiveer-singh-outlook-in/apple-defects`, MIT License). Ingested automatically by preset `apple` or `all`.
 
 ---
 
-## 5. Conveyor Belt Physical Augmentation Suite
+## 3. Plant Pathology Mapping Logic
 
-Field conveyor belts present optical distortions absent in clean lab datasets. Agri_Sorter applies conveyor-specific physical transformations on the training partition:
+Incoming datasets label biological diseases and plant pathologies rather than industrial conveyor conditions. The pipeline includes an expanded `LabelMapper` ontology that automatically maps plant diseases into standard sorter conditions:
+
+| Plant Pathology / Anomaly | Botanical / Agricultural Cause | Sorter Condition | Sorter Compound Class Example |
+| :--- | :--- | :---: | :--- |
+| **`styler_rot`** / `stylar_rot` | *Phomopsis psidii* / *Guignardia psidii* fungal end rot on guava | **`rotten`** | `guava_rotten` |
+| **`bacterial_blight`** | *Xanthomonas axonopodis* necrotic brown spots on pomegranate | **`rotten`** | `pomegranate_rotten` |
+| **`anthracnose`** | *Colletotrichum gloeosporioides* dark sunken decay on mango / guava | **`rotten`** | `mango_rotten` |
+| **`red_rust`** | *Cephaleuros virescens* algal rust forming rough corky crusts on guava | **`scarred`** | `guava_scarred` |
+| **`fruit_fly`** | *Bactrocera dorsalis* oviposition puncture holes and larval rot | **`bug_bite`** | `guava_bug_bite` |
+| **`scab`** | *Venturia inaequalis* / *Pestalotiopsis* rough dark corky lesions | **`scarred`** | `apple_scarred` |
+| **`caterpillar`** | *Deudorix isocrates* borer entry holes on pomegranate / mango | **`bug_bite`** | `pomegranate_bug_bite` |
+| **`lesion`** / `lesions` | Mechanical abrasion, healed surface blemishes, skin cracks | **`scarred`** | `orange_scarred` |
+
+---
+
+## 4. Download & Ingestion Workflows
+
+### A. List Catalog Sources
+To display a formatted table of all 18 registered catalog datasets, direct URLs, and licenses:
+```bash
+python3 scripts/dataset_pipeline.py --list-sources
+```
+
+### B. Ingest by Preset Flag (`--dataset-preset`)
+The `--dataset-preset` flag filters and downloads datasets by fruit group:
+- `all`: Ingests all 18 registered datasets + local apple dataset.
+- `apple`: Ingests `rf_apple_defect`, `rf_apple_surface`, and `data/external/apple_defects`.
+- `guava`: Ingests `rf_guava_wedlv`, `rf_guava_thao`, and `kg_guava_dataset`.
+- `orange`: Ingests `rf_orange_defect`, `rf_orange_inspection`, and `kg_orange_dataset`.
+- `mango`: Ingests `rf_mango_defect` and `rf_mango_grading`.
+- `pomegranate`: Ingests `rf_pomegranate_gq`, `rf_pomegranate_rj`, and `kg_pomegranate_disease`.
+
+```bash
+# Ingest all guava datasets with Roboflow API key
+export ROBOFLOW_API_KEY="your_roboflow_key"
+python3 scripts/dataset_pipeline.py --dataset-preset guava --output-dir data/merged
+```
+
+### C. Direct Roboflow Universe Ingestion
+```bash
+python3 scripts/dataset_pipeline.py \
+    --roboflow-workspace guava-wedlv \
+    --roboflow-project guava-3hezg \
+    --roboflow-key $ROBOFLOW_API_KEY \
+    --fruit-hint guava \
+    --output-dir data/merged
+```
+
+### D. Direct Kaggle Dataset Ingestion
+Ensure your Kaggle API key is installed at `~/.kaggle/kaggle.json`:
+```bash
+python3 scripts/dataset_pipeline.py \
+    --kaggle-datasets sujaykapadnis/pomegranate-fruit-diseases-dataset \
+    --fruit-hint pomegranate \
+    --output-dir data/merged
+```
+
+### E. Offline Synthetic Verification Demo
+Run verified end-to-end dataset generation and splitting offline without requiring any external tokens or network connection:
+```bash
+python3 scripts/dataset_pipeline.py --synthetic-demo --synthetic-count 100 --output-dir data/merged
+```
+
+---
+
+## 5. Conveyor Belt Physical Augmentations
+
+Field conveyor belts introduce optical and mechanical variations absent in clean lab photo sessions. Agri_Sorter applies conveyor-specific physical transformations to the training split:
 
 ```
 +-------------------------------------------------------------+
@@ -117,99 +168,37 @@ Field conveyor belts present optical distortions absent in clean lab datasets. A
 |   ---> [ Motion Blur: Linear transit along belt axis ] --->  |
 |                                                             |
 |   * [ Lighting Shifts: Industrial overhead flicker / shadow ]|
-|   o [ Tumbling Rotation: Rolling as fruit drops onto belt ]  |
+|   o [ Tumbling Rotation: Rolling as fruit settles on belt ]  |
 |   ^ [ Caliber / Distance Scaling: Camera-to-surface depth ]  |
 +-------------------------------------------------------------+
 ```
 
-### Augmentation Parameters:
-
 | Transformation | Parameter Range | Physical Simulation |
 | :--- | :--- | :--- |
-| **Motion Blur** | Kernel size $k \in \{3, 5, 7, 9, 11, 15\}$ (odd), angle $\theta \in [-8^\circ, +8^\circ]$ | Simulates linear transit velocity ($v \approx 0.12\text{ m/s}$) along conveyor direction. |
-| **Lighting Shifts** | Contrast multiplier $\alpha \in [0.75, 1.25]$, Brightness offset $\beta \in [-30, +30]$ | Simulates overhead warehouse fluorescent/LED flicker and ambient shadow transitions. |
-| **Fruit Tumbling & Rolling** | Rotation angle $\theta \in [-180^\circ, +180^\circ]$ around image center | Simulates fruit tumbling and rolling into varied orientations as it settles on the belt. |
-| **Distance & Caliber Scaling** | Scale factor $s \in [0.85, 1.15]$ | Simulates fruit caliber variations and camera distance shifts. |
-
-### Exact Affine Bounding Box Transformation Math:
-
-Given image dimensions $(W, H)$, center $(c_x, c_y) = (W/2, H/2)$, rotation angle $\theta$, and scale $s$, the affine transformation matrix $M \in \mathbb{R}^{2 \times 3}$ is:
-
-$$M = \begin{bmatrix} \alpha & \beta & (1-\alpha) c_x - \beta c_y \\ -\beta & \alpha & \beta c_x + (1-\alpha) c_y \end{bmatrix}$$
-where $\alpha = s \cos\theta$ and $\beta = s \sin\theta$.
-
-Each normalized bounding box $(c_x^{\text{norm}}, c_y^{\text{norm}}, w^{\text{norm}}, h^{\text{norm}})$ is unnormalized to four pixel corners:
-$$C = \begin{bmatrix} x_1 & x_2 & x_2 & x_1 \\ y_1 & y_1 & y_2 & y_2 \\ 1 & 1 & 1 & 1 \end{bmatrix}$$
-
-The rotated corners are computed via:
-$$C' = M \cdot C$$
-
-The new axis-aligned bounding box enclosing all four transformed corners is computed:
-$$x_1' = \min(C'_{0, :}), \quad y_1' = \min(C'_{1, :}), \quad x_2' = \max(C'_{0, :}), \quad y_2' = \max(C'_{1, :})$$
-
-Coordinates are strictly clamped to $[0, W]$ and $[0, H]$. If $w' < 4\text{ px}$ or $h' < 4\text{ px}$, the degenerate box is discarded; otherwise, it is converted back to normalized YOLO format.
+| **Motion Blur** | Kernel $k \in \{3, 5, 7, 9, 11, 15\}$, angle $\theta \in [-8^\circ, +8^\circ]$ | Simulates linear transit velocity ($v \approx 0.12\text{ m/s}$) along conveyor axis. |
+| **Lighting Shifts** | Contrast $\alpha \in [0.75, 1.25]$, Brightness $\beta \in [-30, +30]$ | Simulates overhead warehouse fluorescent/LED flicker and ambient shadow transitions. |
+| **Fruit Tumbling & Rolling** | Rotation angle $\theta \in [-180^\circ, +180^\circ]$ around image center | Simulates tumbling and rolling into varied orientations as fruit settles on the belt. |
+| **Distance & Caliber Scaling** | Scale factor $s \in [0.85, 1.15]$ | Simulates fruit caliber variations and camera mounting depth shifts. |
 
 ---
 
 ## 6. Deduplication & Stratified 80/10/10 Split
 
 1. **Dual Hashing Deduplication**:
-   - **MD5 Checksum**: Removes exact identical file duplicates across merged repositories.
-   - **64-bit Average Hash (aHash)**: Resizes grayscale images to $8 \times 8$, computes mean luminance, and calculates Hamming distance:
-     $$\text{dist}(h_1, h_2) = \text{popcount}(h_1 \oplus h_2)$$
-     Images with $\text{dist} \le 4$ bits are flagged and discarded as perceptual duplicates.
+   - **MD5 Checksum**: Removes exact binary duplicates across overlapping repositories.
+   - **64-bit Average Hash (aHash)**: Resizes grayscale images to $8 \times 8$, calculates luminance mean, and evaluates Hamming distance $\text{dist} \le 4$ bits to detect and eliminate near-duplicate frames.
 
 2. **Strict Stratified Split**:
-   - The unique dataset is partitioned strictly into:
+   - Unique data is strictly partitioned into:
      - **80% Training Split** (`images/train/`, `labels/train/`)
      - **10% Validation Split** (`images/val/`, `labels/val/`)
      - **10% Test Split** (`images/test/`, `labels/test/`)
-   - Stratification ensures class balance across splits with fixed random seeds (`--seed 42`).
+   - Guarantees zero data leakage and balanced class ratios.
 
 ---
 
-## 7. Class Distribution & Minimum 300 Image Warning Threshold
+## 7. Quality Assurance: Minimum 300 Images Threshold
 
-For reliable fine-tuning of YOLO11n on the Hailo-8L accelerator (INT8 quantization):
-- **Minimum Threshold**: Every compound class should contain at least **300 images**.
-- The pipeline scans all annotations across splits and prints an ASCII distribution table.
-- If any of the 20 classes has fewer than 300 images, an explicit `WARNING` banner is raised highlighting the underrepresented classes and recommending targeted synthetic augmentation or additional video capture.
-
----
-
-## 8. CLI Usage Guide
-
-### 1. Run Offline Synthetic Verification Demo (No API Key Required)
-```bash
-python3 scripts/dataset_pipeline.py --synthetic-demo --synthetic-count 100 --output-dir data/merged
-```
-
-### 2. Ingest Local Datasets (e.g. Existing Apple Defect Data)
-```bash
-python3 scripts/dataset_pipeline.py \
-    --source-dirs data/external/apple_defects \
-    --fruit-hint apple \
-    --output-dir data/merged
-```
-
-### 3. Download from Roboflow Universe
-```bash
-export ROBOFLOW_API_KEY="your_api_key_here"
-python3 scripts/dataset_pipeline.py \
-    --roboflow-project apple-defects-yafjq \
-    --fruit-hint apple \
-    --output-dir data/merged
-```
-
-### 4. Download from Kaggle
-```bash
-# Requires ~/.kaggle/kaggle.json configured
-python3 scripts/dataset_pipeline.py \
-    --kaggle-datasets sriramr/fruits-fresh-and-rotten-for-classification \
-    --output-dir data/merged
-```
-
-### 5. Inspect Help & Options
-```bash
-python3 scripts/dataset_pipeline.py --help
-```
+To ensure robust INT8 quantization and high recall on the **Hailo-8L AI HAT**:
+- **Minimum Threshold**: Every compound class requires at least **300 images**.
+- The pipeline scans all splits, displays an ASCII distribution summary table, and issues explicit warnings for underrepresented classes (< 300 samples) prompting targeted synthetic augmentation or additional camera footage collection.

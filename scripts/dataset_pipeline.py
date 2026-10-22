@@ -63,7 +63,7 @@ import random
 import re
 import shutil
 import sys
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import urllib.request
 import zipfile
 
@@ -77,19 +77,336 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 try:
-    from app.contracts import COMPOUND_CLASSES, CONDITIONS, FRUITS
+    from app.contracts import (
+        COMPOUND_CLASSES as CONTRACT_COMPOUND_CLASSES,
+        CONDITIONS as CONTRACT_CONDITIONS,
+        FRUITS as CONTRACT_FRUITS,
+        EXTENDED_COMPOUND_CLASSES as CONTRACT_EXTENDED_CLASSES,
+        EXTENDED_FRUITS as CONTRACT_EXTENDED_FRUITS,
+        LEGACY_FRUITS as CONTRACT_LEGACY_FRUITS,
+    )
 except ImportError:
-    # Fallback to definition if imported standalone outside repo
-    FRUITS = ["apple", "banana", "orange", "mango"]
-    CONDITIONS = ["fresh", "rotten", "bruised", "scarred", "bug_bite"]
-    COMPOUND_CLASSES = [f"{fruit}_{cond}" for fruit in FRUITS for cond in CONDITIONS]
+    CONTRACT_FRUITS = ["apple", "guava", "orange", "mango"]
+    CONTRACT_EXTENDED_FRUITS = ["apple", "guava", "orange", "mango", "pomegranate"]
+    CONTRACT_LEGACY_FRUITS = ["banana"]
+    CONTRACT_CONDITIONS = ["fresh", "rotten", "bruised", "scarred", "bug_bite"]
+    CONTRACT_COMPOUND_CLASSES = [f"{fruit}_{cond}" for fruit in CONTRACT_FRUITS for cond in CONTRACT_CONDITIONS]
+    CONTRACT_EXTENDED_CLASSES = [f"{fruit}_{cond}" for fruit in CONTRACT_EXTENDED_FRUITS for cond in CONTRACT_CONDITIONS]
 
-CLASS_TO_ID = {name: i for i, name in enumerate(COMPOUND_CLASSES)}
-ID_TO_CLASS = {i: name for i, name in enumerate(COMPOUND_CLASSES)}
+PRIMARY_FRUITS = list(CONTRACT_FRUITS)
+CONDITIONS = list(CONTRACT_CONDITIONS)
+
+# Order all supported fruits:
+# Primary (e.g. apple, guava, orange, mango) -> 0..19
+# Extended (e.g. pomegranate) -> 20..24
+# Legacy (e.g. banana) -> 25..29
+ext_extra = [f for f in ["pomegranate"] if f not in PRIMARY_FRUITS]
+leg_extra = [f for f in ["banana"] if f not in PRIMARY_FRUITS and f not in ext_extra]
+
+SUPPORTED_FRUITS = PRIMARY_FRUITS + ext_extra + leg_extra
+PRIMARY_COMPOUND_CLASSES = [f"{fruit}_{cond}" for fruit in PRIMARY_FRUITS for cond in CONDITIONS]
+ALL_COMPOUND_CLASSES = [f"{fruit}_{cond}" for fruit in SUPPORTED_FRUITS for cond in CONDITIONS]
+
+# Backward-compatibility alias
+FRUITS = PRIMARY_FRUITS
+COMPOUND_CLASSES = PRIMARY_COMPOUND_CLASSES
+
+CLASS_TO_ID = {name: i for i, name in enumerate(ALL_COMPOUND_CLASSES)}
+ID_TO_CLASS = {i: name for i, name in enumerate(ALL_COMPOUND_CLASSES)}
 
 DEFAULT_RAW_DIR = REPO_ROOT / "data" / "raw"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "data" / "merged"
 DEFAULT_MIN_CLASS_THRESHOLD = 300
+
+
+# ==============================================================================
+# DATASET CATALOG REGISTRY (18 USER DATASETS + LOCAL)
+# ==============================================================================
+
+@dataclass(frozen=True)
+class DatasetCatalogEntry:
+    """Registered dataset entry with source credentials, fruit target, and licensing."""
+    id: str
+    source_type: str  # 'roboflow', 'kaggle', 'local'
+    name: str
+    workspace: Optional[str] = None
+    project: Optional[str] = None
+    slug: Optional[str] = None
+    fruit_hint: str = "multi"
+    preset: str = "all"
+    license: str = "CC BY 4.0"
+    url: str = ""
+    local_path: Optional[str] = None
+    description: str = ""
+
+
+DATASET_CATALOG: Dict[str, DatasetCatalogEntry] = {
+    # -------------------------------------------------------------------------
+    # Roboflow Universe Datasets (10 User Datasets)
+    # -------------------------------------------------------------------------
+    "rf_guava_wedlv": DatasetCatalogEntry(
+        id="rf_guava_wedlv",
+        source_type="roboflow",
+        name="Roboflow Guava Wedlv",
+        workspace="guava-wedlv",
+        project="guava-3hezg",
+        fruit_hint="guava",
+        preset="guava",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/guava-wedlv/guava-3hezg",
+        description="Guava fruit defect detection: stylar rot, scab, and surface blemishes.",
+    ),
+    "rf_guava_thao": DatasetCatalogEntry(
+        id="rf_guava_thao",
+        source_type="roboflow",
+        name="Roboflow Guava Thao",
+        workspace="thao-ulmra",
+        project="guava-qnkee-1uz3i",
+        fruit_hint="guava",
+        preset="guava",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/thao-ulmra/guava-qnkee-1uz3i",
+        description="Guava quality grading: fresh vs diseased guava classification.",
+    ),
+    "rf_apple_defect": DatasetCatalogEntry(
+        id="rf_apple_defect",
+        source_type="roboflow",
+        name="Roboflow Apple Defect Detection",
+        workspace="appledefectsdetection",
+        project="apple-defect-detection-pkekm",
+        fruit_hint="apple",
+        preset="apple",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/appledefectsdetection/apple-defect-detection-pkekm",
+        description="Apple defects detection: rot, bruising, blemish, and scab lesions.",
+    ),
+    "rf_apple_surface": DatasetCatalogEntry(
+        id="rf_apple_surface",
+        source_type="roboflow",
+        name="Roboflow Apple Surface Defects",
+        workspace="applesort-esgll",
+        project="apple_surface_defects",
+        fruit_hint="apple",
+        preset="apple",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/applesort-esgll/apple_surface_defects",
+        description="Apple surface defects: industrial grading anomalies and russet scars.",
+    ),
+    "rf_mango_defect": DatasetCatalogEntry(
+        id="rf_mango_defect",
+        source_type="roboflow",
+        name="Roboflow Mango Defect Detection",
+        workspace="kaycee-kaye-y-villanueva-mzmks",
+        project="mango-defect-detection",
+        fruit_hint="mango",
+        preset="mango",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/kaycee-kaye-y-villanueva-mzmks/mango-defect-detection",
+        description="Mango defect detection: anthracnose decay, black spots, and weevil bites.",
+    ),
+    "rf_mango_grading": DatasetCatalogEntry(
+        id="rf_mango_grading",
+        source_type="roboflow",
+        name="Roboflow Mango Grading",
+        workspace="mangoclass",
+        project="mangograding",
+        fruit_hint="mango",
+        preset="mango",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/mangoclass/mangograding",
+        description="Mango quality grading: fresh commercial grades vs defective mangoes.",
+    ),
+    "rf_orange_defect": DatasetCatalogEntry(
+        id="rf_orange_defect",
+        source_type="roboflow",
+        name="Roboflow Orange Defect",
+        workspace="mydetect-o2wvw",
+        project="orange-defect",
+        fruit_hint="orange",
+        preset="orange",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/mydetect-o2wvw/orange-defect",
+        description="Orange peel defects: green mold, citrus canker, and peel scuffing.",
+    ),
+    "rf_orange_inspection": DatasetCatalogEntry(
+        id="rf_orange_inspection",
+        source_type="roboflow",
+        name="Roboflow Orange Inspection",
+        workspace="marcel-craig",
+        project="orange-inspection",
+        fruit_hint="orange",
+        preset="orange",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/marcel-craig/orange-inspection",
+        description="Orange surface inspection: quality grading and blemish detection.",
+    ),
+    "rf_pomegranate_gq": DatasetCatalogEntry(
+        id="rf_pomegranate_gq",
+        source_type="roboflow",
+        name="Roboflow Pomegranate GQ",
+        workspace="orin-f84rr",
+        project="pomegranate-gqopm",
+        fruit_hint="pomegranate",
+        preset="pomegranate",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/orin-f84rr/pomegranate-gqopm",
+        description="Pomegranate quality: bacterial blight, fruit rot, and borer holes.",
+    ),
+    "rf_pomegranate_rj": DatasetCatalogEntry(
+        id="rf_pomegranate_rj",
+        source_type="roboflow",
+        name="Roboflow Pomegranate RJ",
+        workspace="projects-jn6uf",
+        project="pomegranate-rjwdq",
+        fruit_hint="pomegranate",
+        preset="pomegranate",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/projects-jn6uf/pomegranate-rjwdq",
+        description="Pomegranate surface anomalies and fruit disease classification.",
+    ),
+
+    # -------------------------------------------------------------------------
+    # Kaggle Datasets (8 User Datasets)
+    # -------------------------------------------------------------------------
+    "kg_fruit_disease": DatasetCatalogEntry(
+        id="kg_fruit_disease",
+        source_type="kaggle",
+        name="Fruits Dataset for Fruit Disease Classification",
+        slug="ateebnoone/fruits-dataset-for-fruit-disease-classification",
+        fruit_hint="multi",
+        preset="all",
+        license="CC0",
+        url="https://www.kaggle.com/datasets/ateebnoone/fruits-dataset-for-fruit-disease-classification",
+        description="Multi-fruit disease dataset for fungal rot, bacterial blight, and scab.",
+    ),
+    "kg_fruits_diseases": DatasetCatalogEntry(
+        id="kg_fruits_diseases",
+        source_type="kaggle",
+        name="Fruits Diseases Classification Dataset",
+        slug="amdatas/fruits-diseases-classification-dataset",
+        fruit_hint="multi",
+        preset="all",
+        license="CC BY-SA 4.0",
+        url="https://www.kaggle.com/datasets/amdatas/fruits-diseases-classification-dataset",
+        description="Multi-class fruit diseases: rot, blotch, rust, and insect damage.",
+    ),
+    "kg_fresh_rotten": DatasetCatalogEntry(
+        id="kg_fresh_rotten",
+        source_type="kaggle",
+        name="Fruits Fresh and Rotten for Classification",
+        slug="sriramr/fruits-fresh-and-rotten-for-classification",
+        fruit_hint="multi",
+        preset="all",
+        license="CC BY-SA 4.0",
+        url="https://www.kaggle.com/datasets/sriramr/fruits-fresh-and-rotten-for-classification",
+        description="Fresh vs rotten classes for apples, bananas, and oranges.",
+    ),
+    "kg_fresh_stale": DatasetCatalogEntry(
+        id="kg_fresh_stale",
+        source_type="kaggle",
+        name="Fresh and Stale Classification",
+        slug="swoyam2609/fresh-and-stale-classification",
+        fruit_hint="multi",
+        preset="all",
+        license="CC0",
+        url="https://www.kaggle.com/datasets/swoyam2609/fresh-and-stale-classification",
+        description="Commercial freshness and staleness classification for fruits.",
+    ),
+    "kg_pomegranate_disease": DatasetCatalogEntry(
+        id="kg_pomegranate_disease",
+        source_type="kaggle",
+        name="Pomegranate Fruit Diseases Dataset",
+        slug="sujaykapadnis/pomegranate-fruit-diseases-dataset",
+        fruit_hint="pomegranate",
+        preset="pomegranate",
+        license="CC BY 4.0",
+        url="https://www.kaggle.com/datasets/sujaykapadnis/pomegranate-fruit-diseases-dataset",
+        description="Pomegranate diseases: bacterial blight, anthracnose, fruit rot, caterpillar.",
+    ),
+    "kg_guava_dataset": DatasetCatalogEntry(
+        id="kg_guava_dataset",
+        source_type="kaggle",
+        name="Guava Disease Dataset",
+        slug="noamaanabdulazeem/guava-dataset",
+        fruit_hint="guava",
+        preset="guava",
+        license="CC0",
+        url="https://www.kaggle.com/datasets/noamaanabdulazeem/guava-dataset",
+        description="Guava pathology dataset: red rust, scab, styler rot, fruit fly, healthy.",
+    ),
+    "kg_orange_dataset": DatasetCatalogEntry(
+        id="kg_orange_dataset",
+        source_type="kaggle",
+        name="Orange Fruit Dataset",
+        slug="sgandhi2003/orange-fruit-dataset",
+        fruit_hint="orange",
+        preset="orange",
+        license="CC BY 4.0",
+        url="https://www.kaggle.com/datasets/sgandhi2003/orange-fruit-dataset",
+        description="Orange dataset: citrus canker, green mold, black spot, and blemishes.",
+    ),
+    "kg_fruits_360": DatasetCatalogEntry(
+        id="kg_fruits_360",
+        source_type="kaggle",
+        name="Fruits 360 Dataset",
+        slug="moltean/fruits",
+        fruit_hint="multi",
+        preset="all",
+        license="CC BY-SA 4.0",
+        url="https://www.kaggle.com/datasets/moltean/fruits",
+        description="Fruits 360: Rotated multi-fruit dataset for diverse fruit varieties.",
+    ),
+
+    # -------------------------------------------------------------------------
+    # Local External Dataset (Apple Defects - Preserved)
+    # -------------------------------------------------------------------------
+    "local_apple_defects": DatasetCatalogEntry(
+        id="local_apple_defects",
+        source_type="local",
+        name="Local Apple Defects Dataset",
+        local_path="data/external/apple_defects",
+        fruit_hint="apple",
+        preset="apple",
+        license="MIT",
+        url="Local external directory (data/external/apple_defects)",
+        description="Local Roboflow Apple Defects (MIT): Bruising, crack, insect_bite, rot, russetting.",
+    ),
+}
+
+
+def print_catalog_sources() -> None:
+    """Print formatted ASCII table of all 18 catalog sources with URLs & licenses."""
+    print("\n" + "=" * 130)
+    print("                        AGRI_SORTER REGISTERED PUBLIC DATASET CATALOG (18 SOURCES)")
+    print("=" * 130)
+    header = f"{'Catalog ID':<23} | {'Type':<8} | {'Fruit':<11} | {'Preset':<11} | {'License':<13} | {'URL / Identifier'}"
+    print(header)
+    print("-" * 130)
+
+    for cat_id, entry in DATASET_CATALOG.items():
+        if cat_id == "local_apple_defects":
+            continue
+        ident = entry.url if entry.source_type == "roboflow" else entry.slug
+        print(f"{entry.id:<23} | {entry.source_type.title():<8} | {entry.fruit_hint:<11} | {entry.preset:<11} | {entry.license:<13} | {ident}")
+
+    print("-" * 130)
+    local_entry = DATASET_CATALOG.get("local_apple_defects")
+    if local_entry:
+        print(f"[*] Preserved Local Dataset: {local_entry.id} ({local_entry.local_path}, License: {local_entry.license})")
+    print("=" * 130 + "\n")
+
+
+def get_catalog_entries_for_preset(preset: str) -> List[DatasetCatalogEntry]:
+    """Retrieve catalog entries matching the given preset ('all', 'apple', 'guava', 'orange', 'mango', 'pomegranate')."""
+    preset_clean = preset.lower().strip()
+    if preset_clean == "all":
+        return list(DATASET_CATALOG.values())
+
+    matched: List[DatasetCatalogEntry] = []
+    for entry in DATASET_CATALOG.values():
+        if entry.preset == preset_clean or entry.fruit_hint == preset_clean:
+            matched.append(entry)
+    return matched
 
 
 # ==============================================================================
@@ -124,7 +441,7 @@ class SampleRecord:
 # ==============================================================================
 
 class LabelMapper:
-    """Maps arbitrary incoming dataset labels and class IDs to the 20 compound classes."""
+    """Maps arbitrary incoming dataset labels and class IDs to compound classes."""
 
     CONDITION_SYNONYMS = {
         "fresh": [
@@ -135,7 +452,8 @@ class LabelMapper:
             "rot", "rotten", "decay", "decayed", "mold", "moldy", "bad",
             "anthracnose", "spoil", "spoiled", "breakdown", "fungal", "fungus",
             "necrotic", "black_rot", "bitter_rot", "stem_end_rot", "cigar_end_rot",
-            "overripe", "blight", "mildew"
+            "overripe", "blight", "mildew", "styler_rot", "stylar_rot", "stylar",
+            "bacterial_blight", "fruit_rot", "wilt", "die_back", "green_mold"
         ],
         "bruised": [
             "bruise", "bruised", "bruising", "impact", "pressure", "indent",
@@ -145,14 +463,16 @@ class LabelMapper:
         "scarred": [
             "scar", "scarred", "scab", "scratch", "russet", "russetting",
             "crack", "cracked", "canker", "blotch", "blemish", "scuff", "rust",
-            "cork", "corky", "peel_blemish", "wind_scar", "skin_defect",
-            "melanose", "greening", "sigatoka"
+            "red_rust", "cork", "corky", "peel_blemish", "wind_scar", "skin_defect",
+            "melanose", "greening", "sigatoka", "lesion", "lesions", "black_spot",
+            "dot"
         ],
         "bug_bite": [
             "bug", "bug_bite", "bugbite", "bite", "worm", "wormhole", "insect",
             "insect_bite", "pest", "weevil", "fly", "fruit_fly", "moth",
             "codling_moth", "puncture", "borer", "larva", "thrip", "thrips",
-            "mite", "scale_insect", "aphid"
+            "mite", "scale_insect", "aphid", "caterpillar", "cutting_weevil",
+            "gall_midge"
         ],
     }
 
@@ -161,13 +481,20 @@ class LabelMapper:
         "banana": ["banana", "bananas", "musa"],
         "orange": ["orange", "oranges", "citrus", "mandarin", "tangerine"],
         "mango": ["mango", "mangoes", "mangos", "mangifera"],
+        "guava": ["guava", "guavas", "psidium", "amrood"],
+        "pomegranate": ["pomegranate", "pomegranates", "punica", "pom", "anar"],
     }
 
-    def __init__(self, custom_map: Optional[Dict[str, str]] = None):
+    def __init__(
+        self,
+        custom_map: Optional[Dict[str, str]] = None,
+        class_to_id: Optional[Dict[str, int]] = None,
+    ):
         self.custom_map: Dict[str, str] = custom_map or {}
+        self.class_to_id: Dict[str, int] = class_to_id or CLASS_TO_ID
 
     @classmethod
-    def from_file(cls, path: Path) -> "LabelMapper":
+    def from_file(cls, path: Path, class_to_id: Optional[Dict[str, int]] = None) -> "LabelMapper":
         """Load custom mapping from JSON or YAML file."""
         if not path.is_file():
             raise FileNotFoundError(f"Label map file not found: {path}")
@@ -176,21 +503,24 @@ class LabelMapper:
                 data = yaml.safe_load(f)
             else:
                 data = json.load(f)
-        return cls(custom_map={str(k).lower().strip(): str(v).lower().strip() for k, v in data.items()})
+        return cls(
+            custom_map={str(k).lower().strip(): str(v).lower().strip() for k, v in data.items()},
+            class_to_id=class_to_id,
+        )
 
     def map_label(self, raw_label: str, fruit_hint: Optional[str] = None) -> Optional[int]:
-        """Map raw text label to compound class ID (0..19), or None if unmappable."""
+        """Map raw text label to compound class ID (0..29), or None if unmappable."""
         cleaned = raw_label.lower().strip().replace("-", "_").replace(" ", "_")
 
         # 1. Check custom overrides first
         if cleaned in self.custom_map:
             target = self.custom_map[cleaned]
-            if target in CLASS_TO_ID:
-                return CLASS_TO_ID[target]
+            if target in self.class_to_id:
+                return self.class_to_id[target]
 
         # 2. Direct exact compound class match
-        if cleaned in CLASS_TO_ID:
-            return CLASS_TO_ID[cleaned]
+        if cleaned in self.class_to_id:
+            return self.class_to_id[cleaned]
 
         # 3. Identify Fruit
         detected_fruit: Optional[str] = None
@@ -204,7 +534,7 @@ class LabelMapper:
 
         if not detected_fruit and fruit_hint:
             hint_clean = fruit_hint.lower().strip()
-            if hint_clean in FRUITS:
+            if hint_clean in self.FRUIT_SYNONYMS or hint_clean in SUPPORTED_FRUITS:
                 detected_fruit = hint_clean
 
         # 4. Identify Condition
@@ -220,11 +550,13 @@ class LabelMapper:
         # 5. Combine Fruit and Condition
         if detected_fruit and detected_condition:
             compound = f"{detected_fruit}_{detected_condition}"
-            return CLASS_TO_ID.get(compound)
+            return self.class_to_id.get(compound)
 
         # Fallback: if only fruit identified, default to fresh
         if detected_fruit and not detected_condition:
-            return CLASS_TO_ID.get(f"{detected_fruit}_fresh")
+            return self.class_to_id.get(f"{detected_fruit}_fresh")
+
+        return None
 
         return None
 
@@ -472,6 +804,8 @@ class SyntheticDemoGenerator:
         "banana": [(40, 215, 245), (45, 200, 230)],                  # Yellow, Yellow-green
         "orange": [(25, 140, 240), (20, 155, 250)],                  # Bright orange
         "mango": [(35, 185, 235), (45, 160, 215)],                   # Golden yellow, blush
+        "guava": [(50, 170, 130), (55, 190, 160)],                   # Light green, yellowish-green
+        "pomegranate": [(25, 25, 150), (30, 30, 175)],               # Crimson / ruby red
     }
 
     def __init__(self, img_size: int = 640):
@@ -585,6 +919,31 @@ class SyntheticDemoGenerator:
             )
             # Stem end
             cv2.circle(img, (cx - int(rx * 0.8), cy - int(ry * 0.3)), max(2, int(radius * 0.07)), (25, 35, 45), -1)
+
+        elif fruit == "guava":
+            # Globose / pyriform shape with textured skin
+            cv2.ellipse(img, (cx, cy), (radius, int(radius * 0.92)), 0, 0, 360, base_color, -1)
+            cv2.ellipse(mask, (cx, cy), (radius, int(radius * 0.92)), 0, 0, 360, 255, -1)
+            # Calyx scar at bottom
+            cv2.circle(img, (cx, cy + int(radius * 0.85)), max(2, int(radius * 0.08)), (35, 75, 55), -1)
+
+        elif fruit == "pomegranate":
+            # Round crown-tipped sphere
+            cv2.circle(img, (cx, cy), radius, base_color, -1)
+            cv2.circle(mask, (cx, cy), radius, 255, -1)
+            # Characteristic prominent serrated calyx (crown) at top
+            crown_top = cy - radius
+            crown_pts = np.array([
+                [cx - int(radius * 0.22), crown_top + 4],
+                [cx - int(radius * 0.16), crown_top - int(radius * 0.20)],
+                [cx - int(radius * 0.06), crown_top - 2],
+                [cx, crown_top - int(radius * 0.25)],
+                [cx + int(radius * 0.06), crown_top - 2],
+                [cx + int(radius * 0.16), crown_top - int(radius * 0.20)],
+                [cx + int(radius * 0.22), crown_top + 4],
+            ], dtype=np.int32)
+            cv2.fillPoly(img, [crown_pts], (20, 20, 120))
+            cv2.fillPoly(mask, [crown_pts], 255)
 
         bx, by, bw, bh = cv2.boundingRect(mask)
         return bx, by, bw, bh
@@ -783,6 +1142,7 @@ class DatasetPipeline:
         label_mapper: Optional[LabelMapper] = None,
         deduplicator: Optional[Deduplicator] = None,
         augmentor: Optional[ConveyorAugmentor] = None,
+        compound_classes: Optional[List[str]] = None,
     ):
         self.output_dir = Path(output_dir)
         self.raw_dir = Path(raw_dir)
@@ -793,13 +1153,14 @@ class DatasetPipeline:
         self.seed = seed
         self.rng = random.Random(seed)
 
+        self.compound_classes: List[str] = list(compound_classes) if compound_classes is not None else list(PRIMARY_COMPOUND_CLASSES)
         self.label_mapper = label_mapper or LabelMapper()
         self.deduplicator = deduplicator or Deduplicator()
         self.augmentor = augmentor or ConveyorAugmentor()
 
     def discover_and_parse_sources(
         self,
-        source_dirs: List[Path],
+        source_dirs: Union[List[Path], List[Tuple[Path, Optional[str]]]],
         fruit_hint: Optional[str] = None,
     ) -> List[SampleRecord]:
         """Scan source directories, parse labels/annotations, and remap to compound classes."""
@@ -807,18 +1168,25 @@ class DatasetPipeline:
         dup_count = 0
         total_scanned = 0
 
-        for s_dir in source_dirs:
+        for item in source_dirs:
+            if isinstance(item, tuple):
+                s_dir, item_hint = item
+                effective_hint = item_hint or fruit_hint
+            else:
+                s_dir = item
+                effective_hint = fruit_hint
+
             if not s_dir.exists():
                 print(f"[!] Warning: Source directory does not exist: {s_dir}")
                 continue
 
-            print(f"\n[+] Ingesting dataset source: {s_dir}")
+            print(f"\n[+] Ingesting dataset source: {s_dir} (hint: {effective_hint or 'none'})")
 
             # Check for data.yaml mapping
             yaml_path = s_dir / "data.yaml"
             class_id_map: Dict[int, int] = {}
             if yaml_path.is_file():
-                class_id_map = self.label_mapper.map_data_yaml(yaml_path, fruit_hint=fruit_hint)
+                class_id_map = self.label_mapper.map_data_yaml(yaml_path, fruit_hint=effective_hint)
                 print(f"    Loaded data.yaml with {len(class_id_map)} mapped class IDs: {class_id_map}")
 
             # Find all image files
@@ -844,7 +1212,7 @@ class DatasetPipeline:
                     continue
 
                 # 2. Parse Bounding Box Annotations
-                bboxes = self._find_and_parse_bboxes(img_path, s_dir, class_id_map, fruit_hint, img_bgr)
+                bboxes = self._find_and_parse_bboxes(img_path, s_dir, class_id_map, effective_hint, img_bgr)
                 if not bboxes:
                     continue
 
@@ -900,7 +1268,7 @@ class DatasetPipeline:
                         target_id: Optional[int] = None
                         if raw_id in class_id_map:
                             target_id = class_id_map[raw_id]
-                        elif 0 <= raw_id < len(COMPOUND_CLASSES):
+                        elif 0 <= raw_id < len(self.compound_classes):
                             target_id = raw_id
 
                         if target_id is not None:
@@ -1005,7 +1373,7 @@ class DatasetPipeline:
             (self.output_dir / "labels" / split_name).mkdir(parents=True, exist_ok=True)
 
         class_distribution: Dict[int, Dict[str, int]] = {
-            i: {"train": 0, "val": 0, "test": 0, "total": 0} for i in range(len(COMPOUND_CLASSES))
+            i: {"train": 0, "val": 0, "test": 0, "total": 0} for i in range(len(self.compound_classes))
         }
 
         for split_name, sample_list in splits.items():
@@ -1025,8 +1393,9 @@ class DatasetPipeline:
                 with open(dst_lbl, "w", encoding="utf-8") as lf:
                     for bbox in sample.bboxes:
                         lf.write(bbox.to_yolo_line())
-                        class_distribution[bbox.class_id][split_name] += 1
-                        class_distribution[bbox.class_id]["total"] += 1
+                        if bbox.class_id in class_distribution:
+                            class_distribution[bbox.class_id][split_name] += 1
+                            class_distribution[bbox.class_id]["total"] += 1
 
                 # Conveyor Augmentations (applied to train split only)
                 if split_name == "train" and self.augment_train:
@@ -1043,8 +1412,9 @@ class DatasetPipeline:
                         with open(aug_dst_lbl, "w", encoding="utf-8") as alf:
                             for bbox in aug_bboxes:
                                 alf.write(bbox.to_yolo_line())
-                                class_distribution[bbox.class_id]["train"] += 1
-                                class_distribution[bbox.class_id]["total"] += 1
+                                if bbox.class_id in class_distribution:
+                                    class_distribution[bbox.class_id]["train"] += 1
+                                    class_distribution[bbox.class_id]["total"] += 1
 
         # Write data.yaml
         data_yaml_path = self.output_dir / "data.yaml"
@@ -1053,8 +1423,8 @@ class DatasetPipeline:
             "train": "images/train",
             "val": "images/val",
             "test": "images/test",
-            "nc": len(COMPOUND_CLASSES),
-            "names": {i: name for i, name in enumerate(COMPOUND_CLASSES)},
+            "nc": len(self.compound_classes),
+            "names": {i: name for i, name in enumerate(self.compound_classes)},
         }
         with open(data_yaml_path, "w", encoding="utf-8") as f:
             yaml.dump(yaml_content, f, sort_keys=False)
@@ -1072,16 +1442,16 @@ class DatasetPipeline:
         print("-" * 90)
 
         underrepresented: List[str] = []
-        total_train = sum(dist[i]["train"] for i in dist)
-        total_val = sum(dist[i]["val"] for i in dist)
-        total_test = sum(dist[i]["test"] for i in dist)
-        grand_total = sum(dist[i]["total"] for i in dist)
+        total_train = sum(dist[i]["train"] for i in dist if i in dist)
+        total_val = sum(dist[i]["val"] for i in dist if i in dist)
+        total_test = sum(dist[i]["test"] for i in dist if i in dist)
+        grand_total = sum(dist[i]["total"] for i in dist if i in dist)
 
-        for i, class_name in enumerate(COMPOUND_CLASSES):
-            c_tr = dist[i]["train"]
-            c_va = dist[i]["val"]
-            c_te = dist[i]["test"]
-            c_tot = dist[i]["total"]
+        for i, class_name in enumerate(self.compound_classes):
+            c_tr = dist.get(i, {}).get("train", 0)
+            c_va = dist.get(i, {}).get("val", 0)
+            c_te = dist.get(i, {}).get("test", 0)
+            c_tot = dist.get(i, {}).get("total", 0)
 
             if c_tot < self.min_class_threshold:
                 status = f"LOW (<{self.min_class_threshold})"
@@ -1092,20 +1462,20 @@ class DatasetPipeline:
             print(f"{i:<3} | {class_name:<20} | {c_tr:<8} | {c_va:<8} | {c_te:<8} | {c_tot:<8} | {status:<12}")
 
         print("-" * 90)
-        print(f"TOTALS | {'20 Compound Classes':<20} | {total_train:<8} | {total_val:<8} | {total_test:<8} | {grand_total:<8} |")
+        print(f"TOTALS | {f'{len(self.compound_classes)} Compound Classes':<20} | {total_train:<8} | {total_val:<8} | {total_test:<8} | {grand_total:<8} |")
         print("=" * 90)
 
         # Print explicit warnings
         if underrepresented:
             print("\n" + "!" * 90)
-            print(f"⚠️  WARNING: {len(underrepresented)} of 20 class(es) have fewer than {self.min_class_threshold} images:")
+            print(f"⚠️  WARNING: {len(underrepresented)} of {len(self.compound_classes)} class(es) have fewer than {self.min_class_threshold} images:")
             for item in underrepresented:
                 print(f"    - {item} < {self.min_class_threshold} threshold")
             print("\nACTION REQUIRED: Acquire additional real-world conveyor footage or use targeted")
             print("synthetic augmentations before production deployment on Hailo-8L / Raspberry Pi 4.")
             print("!" * 90 + "\n")
         else:
-            print(f"\n[+] SUCCESS: All 20 compound classes satisfy the minimum threshold of {self.min_class_threshold} images!\n")
+            print(f"\n[+] SUCCESS: All {len(self.compound_classes)} compound classes satisfy the minimum threshold of {self.min_class_threshold} images!\n")
 
         return underrepresented
 
@@ -1123,10 +1493,9 @@ class DatasetPipeline:
 
         print(f"[+] Generating {count} synthetic multi-fruit conveyor images...")
         for i in range(count):
-            # Round-robin assign across all 20 compound classes
-            cls_idx = i % len(COMPOUND_CLASSES)
-            fruit = FRUITS[cls_idx // len(CONDITIONS)]
-            condition = CONDITIONS[cls_idx % len(CONDITIONS)]
+            cls_idx = i % len(self.compound_classes)
+            fruit_condition_name = self.compound_classes[cls_idx]
+            fruit, condition = fruit_condition_name.split("_", 1)
 
             img, bbox = generator.generate_sample(fruit, condition, self.rng)
             img_path = demo_raw_dir / f"syn_{i:04d}_{fruit}_{condition}.jpg"
@@ -1215,6 +1584,18 @@ def build_cli_parser() -> argparse.ArgumentParser:
 
     group_download = parser.add_argument_group("Public Dataset Download Sources")
     group_download.add_argument(
+        "--dataset-preset",
+        type=str,
+        choices=["all", "apple", "guava", "orange", "mango", "pomegranate"],
+        default=None,
+        help="Filter and ingest registered datasets by preset (all, apple, guava, orange, mango, pomegranate)",
+    )
+    group_download.add_argument(
+        "--list-sources",
+        action="store_true",
+        help="List all 18 registered catalog datasets with URLs, presets, and licenses, then exit",
+    )
+    group_download.add_argument(
         "--roboflow-project",
         type=str,
         default=None,
@@ -1249,7 +1630,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
     group_download.add_argument(
         "--fruit-hint",
         type=str,
-        choices=FRUITS,
+        choices=SUPPORTED_FRUITS,
         default=None,
         help="Fruit type hint for single-fruit datasets with unbranded defect labels",
     )
@@ -1298,10 +1679,21 @@ def main() -> None:
     parser = build_cli_parser()
     args = parser.parse_args()
 
+    # 1. List catalog sources and exit
+    if args.list_sources:
+        print_catalog_sources()
+        return
+
     # Validate split ratios sum to 1.0
     r_sum = sum(args.split_ratio)
     if not math.isclose(r_sum, 1.0, rel_tol=1e-3):
         parser.error(f"Split ratios must sum to 1.0, got: {args.split_ratio} (sum = {r_sum:.3f})")
+
+    # Determine target compound classes based on preset or fruit hints
+    if args.dataset_preset in ["all", "guava", "pomegranate"] or args.fruit_hint in ["guava", "pomegranate"]:
+        target_classes = ALL_COMPOUND_CLASSES
+    else:
+        target_classes = PRIMARY_COMPOUND_CLASSES
 
     # Load custom label mapper if provided
     label_mapper = LabelMapper.from_file(args.label_map) if args.label_map else LabelMapper()
@@ -1316,17 +1708,62 @@ def main() -> None:
         augment_factor=args.augment_factor,
         seed=args.seed,
         label_mapper=label_mapper,
+        compound_classes=target_classes,
     )
 
-    # 1. Synthetic Demo Mode
+    # 2. Synthetic Demo Mode
     if args.synthetic_demo:
         pipeline.run_synthetic_demo(count=args.synthetic_count)
         return
 
-    # 2. Collect and Download Sources
-    active_sources: List[Path] = list(args.source_dirs)
+    # 3. Collect and Ingest Sources
+    active_sources: List[Union[Path, Tuple[Path, Optional[str]]]] = list(args.source_dirs)
 
-    # Download from Roboflow Universe
+    # Ingest from Preset Catalog
+    if args.dataset_preset:
+        preset_entries = get_catalog_entries_for_preset(args.dataset_preset)
+        print(f"\n[+] Selected dataset preset '{args.dataset_preset}': found {len(preset_entries)} matching catalog sources.")
+        for entry in preset_entries:
+            if entry.source_type == "local" and entry.local_path:
+                local_dir = REPO_ROOT / entry.local_path
+                if local_dir.exists():
+                    active_sources.append((local_dir, entry.fruit_hint))
+                    print(f"    [+] Ingesting local source: {entry.id} -> {local_dir}")
+                else:
+                    print(f"    [!] Local directory not found: {local_dir}")
+            elif entry.source_type == "roboflow" and entry.project:
+                rf_cached = args.raw_dir / "roboflow" / entry.project
+                if rf_cached.is_dir() and any(rf_cached.iterdir()):
+                    active_sources.append((rf_cached, entry.fruit_hint))
+                    print(f"    [+] Using cached Roboflow dataset: {entry.id} -> {rf_cached}")
+                elif args.roboflow_key:
+                    try:
+                        rf_path = download_roboflow(
+                            project=entry.project,
+                            api_key=args.roboflow_key,
+                            workspace=entry.workspace,
+                            output_dir=args.raw_dir / "roboflow",
+                        )
+                        active_sources.append((rf_path, entry.fruit_hint))
+                    except Exception as e:
+                        print(f"    [!] Failed to download Roboflow dataset '{entry.id}': {e}")
+                else:
+                    print(f"    [*] Notice: Roboflow dataset '{entry.id}' ({entry.url}) requires --roboflow-key. Skipping auto-download.")
+            elif entry.source_type == "kaggle" and entry.slug:
+                kg_cached = args.raw_dir / "kaggle" / entry.slug.replace("/", "_")
+                if kg_cached.is_dir() and any(kg_cached.iterdir()):
+                    active_sources.append((kg_cached, entry.fruit_hint))
+                    print(f"    [+] Using cached Kaggle dataset: {entry.id} -> {kg_cached}")
+                elif shutil.which("kaggle"):
+                    try:
+                        kg_path = download_kaggle(entry.slug, output_dir=args.raw_dir / "kaggle")
+                        active_sources.append((kg_path, entry.fruit_hint))
+                    except Exception as e:
+                        print(f"    [!] Kaggle download failed for '{entry.id}': {e}")
+                else:
+                    print(f"    [*] Notice: Kaggle CLI not available for '{entry.id}' ({entry.slug}). Skipping auto-download.")
+
+    # Explicit Roboflow Project flag
     if args.roboflow_project:
         if not args.roboflow_key:
             parser.error("--roboflow-key (or ROBOFLOW_API_KEY environment variable) is required for Roboflow download.")
@@ -1344,15 +1781,18 @@ def main() -> None:
         url_path = download_zip_url(url, url_dir)
         active_sources.append(url_path)
 
-    # Download from Kaggle
+    # Download from explicit Kaggle datasets
     for kaggle_slug in args.kaggle_datasets:
         kg_path = download_kaggle(kaggle_slug, output_dir=args.raw_dir / "kaggle")
         active_sources.append(kg_path)
 
     if not active_sources:
-        print("\n[-] No input dataset sources specified.")
-        print("    Use --synthetic-demo to test the pipeline locally with synthetic multi-fruit data,")
-        print("    or provide --source-dirs, --roboflow-project, --kaggle-datasets, or --urls.")
+        print("\n[-] No input dataset sources specified or available locally.")
+        print("    Options:")
+        print("    1. Use --list-sources to see all 18 registered catalog datasets")
+        print("    2. Use --dataset-preset [all|apple|guava|orange|mango|pomegranate]")
+        print("    3. Use --synthetic-demo to test the pipeline locally with synthetic multi-fruit data")
+        print("    4. Ingest local directories via --source-dirs <path>")
         print("\nRun with --help for all available options.\n")
         sys.exit(1)
 

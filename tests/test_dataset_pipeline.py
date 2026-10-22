@@ -15,12 +15,16 @@ from app.contracts import COMPOUND_CLASSES, CONDITIONS, FRUITS
 from scripts.dataset_pipeline import (
     BBox,
     CLASS_TO_ID,
+    ID_TO_CLASS,
+    DATASET_CATALOG,
     ConveyorAugmentor,
     Deduplicator,
     DatasetPipeline,
     LabelMapper,
     SampleRecord,
     SyntheticDemoGenerator,
+    get_catalog_entries_for_preset,
+    print_catalog_sources,
 )
 
 
@@ -86,7 +90,56 @@ def test_label_mapper_synonyms():
     for raw_label, expected_compound in synonym_cases:
         mapped_id = mapper.map_label(raw_label)
         assert mapped_id is not None, f"Failed to map: {raw_label}"
-        assert COMPOUND_CLASSES[mapped_id] == expected_compound
+        assert ID_TO_CLASS[mapped_id] == expected_compound
+
+
+def test_label_mapper_plant_pathologies():
+    """Verify specific plant pathology mapping into standard conditions.
+
+    Required pathologies: styler_rot, bacterial_blight, anthracnose, red_rust,
+    fruit_fly, scab, caterpillar, lesion.
+    Target fruits: guava, pomegranate, apple, orange, mango.
+    """
+    mapper = LabelMapper()
+
+    # styler_rot -> rotten
+    assert ID_TO_CLASS[mapper.map_label("styler_rot", fruit_hint="guava")] == "guava_rotten"
+    assert ID_TO_CLASS[mapper.map_label("guava_stylar_rot")] == "guava_rotten"
+
+    # bacterial_blight -> rotten
+    assert ID_TO_CLASS[mapper.map_label("bacterial_blight", fruit_hint="pomegranate")] == "pomegranate_rotten"
+    assert ID_TO_CLASS[mapper.map_label("pomegranate_bacterial_blight")] == "pomegranate_rotten"
+
+    # anthracnose -> rotten
+    assert ID_TO_CLASS[mapper.map_label("anthracnose", fruit_hint="mango")] == "mango_rotten"
+    assert ID_TO_CLASS[mapper.map_label("mango_anthracnose")] == "mango_rotten"
+    assert ID_TO_CLASS[mapper.map_label("guava_anthracnose")] == "guava_rotten"
+
+    # red_rust -> scarred
+    assert ID_TO_CLASS[mapper.map_label("red_rust", fruit_hint="guava")] == "guava_scarred"
+    assert ID_TO_CLASS[mapper.map_label("guava_red_rust")] == "guava_scarred"
+
+    # fruit_fly -> bug_bite
+    assert ID_TO_CLASS[mapper.map_label("fruit_fly", fruit_hint="guava")] == "guava_bug_bite"
+    assert ID_TO_CLASS[mapper.map_label("orange_fruit_fly")] == "orange_bug_bite"
+
+    # scab -> scarred
+    assert ID_TO_CLASS[mapper.map_label("scab", fruit_hint="apple")] == "apple_scarred"
+    assert ID_TO_CLASS[mapper.map_label("guava_scab")] == "guava_scarred"
+
+    # caterpillar -> bug_bite
+    assert ID_TO_CLASS[mapper.map_label("caterpillar", fruit_hint="pomegranate")] == "pomegranate_bug_bite"
+    assert ID_TO_CLASS[mapper.map_label("pomegranate_caterpillar")] == "pomegranate_bug_bite"
+
+    # lesion -> scarred
+    assert ID_TO_CLASS[mapper.map_label("lesion", fruit_hint="orange")] == "orange_scarred"
+    assert ID_TO_CLASS[mapper.map_label("guava_lesions")] == "guava_scarred"
+
+    # Target fruits: fresh checks
+    assert ID_TO_CLASS[mapper.map_label("fresh_guava")] == "guava_fresh"
+    assert ID_TO_CLASS[mapper.map_label("fresh_pomegranate")] == "pomegranate_fresh"
+    assert ID_TO_CLASS[mapper.map_label("good", fruit_hint="guava")] == "guava_fresh"
+    assert ID_TO_CLASS[mapper.map_label("healthy", fruit_hint="pomegranate")] == "pomegranate_fresh"
 
 
 def test_label_mapper_fruit_hint():
@@ -371,3 +424,81 @@ def test_end_to_end_synthetic_pipeline(temp_dirs):
         assert len(parts) == 5
         cls_id = int(parts[0])
         assert 0 <= cls_id < 20
+
+
+# ==============================================================================
+# DATASET CATALOG & PRESET TESTS
+# ==============================================================================
+
+def test_dataset_catalog_18_user_sources():
+    """Verify that all 18 user-provided Roboflow and Kaggle datasets are registered."""
+    expected_roboflow = [
+        "rf_guava_wedlv",
+        "rf_guava_thao",
+        "rf_apple_defect",
+        "rf_apple_surface",
+        "rf_mango_defect",
+        "rf_mango_grading",
+        "rf_orange_defect",
+        "rf_orange_inspection",
+        "rf_pomegranate_gq",
+        "rf_pomegranate_rj",
+    ]
+    expected_kaggle = [
+        "kg_fruit_disease",
+        "kg_fruits_diseases",
+        "kg_fresh_rotten",
+        "kg_fresh_stale",
+        "kg_pomegranate_disease",
+        "kg_guava_dataset",
+        "kg_orange_dataset",
+        "kg_fruits_360",
+    ]
+
+    for rf_id in expected_roboflow:
+        assert rf_id in DATASET_CATALOG, f"Missing Roboflow dataset: {rf_id}"
+        entry = DATASET_CATALOG[rf_id]
+        assert entry.source_type == "roboflow"
+        assert entry.workspace is not None
+        assert entry.project is not None
+        assert entry.url.startswith("https://universe.roboflow.com")
+        assert entry.license == "CC BY 4.0"
+
+    for kg_id in expected_kaggle:
+        assert kg_id in DATASET_CATALOG, f"Missing Kaggle dataset: {kg_id}"
+        entry = DATASET_CATALOG[kg_id]
+        assert entry.source_type == "kaggle"
+        assert entry.slug is not None
+        assert entry.url.startswith("https://www.kaggle.com/datasets")
+
+    # Local apple defects should also be preserved
+    assert "local_apple_defects" in DATASET_CATALOG
+    assert DATASET_CATALOG["local_apple_defects"].source_type == "local"
+
+
+def test_dataset_presets():
+    """Verify filtering catalog sources by preset."""
+    # Guava preset: rf_guava_wedlv, rf_guava_thao, kg_guava_dataset
+    guava_entries = get_catalog_entries_for_preset("guava")
+    guava_ids = {e.id for e in guava_entries}
+    assert "rf_guava_wedlv" in guava_ids
+    assert "rf_guava_thao" in guava_ids
+    assert "kg_guava_dataset" in guava_ids
+
+    # Pomegranate preset
+    pom_entries = get_catalog_entries_for_preset("pomegranate")
+    pom_ids = {e.id for e in pom_entries}
+    assert "rf_pomegranate_gq" in pom_ids
+    assert "rf_pomegranate_rj" in pom_ids
+    assert "kg_pomegranate_disease" in pom_ids
+
+    # Apple preset
+    apple_entries = get_catalog_entries_for_preset("apple")
+    apple_ids = {e.id for e in apple_entries}
+    assert "rf_apple_defect" in apple_ids
+    assert "rf_apple_surface" in apple_ids
+    assert "local_apple_defects" in apple_ids
+
+    # All preset returns all 18 + local (19 entries)
+    all_entries = get_catalog_entries_for_preset("all")
+    assert len(all_entries) >= 18
