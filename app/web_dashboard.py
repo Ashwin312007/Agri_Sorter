@@ -252,7 +252,7 @@ class SorterHub:
                         "status": track.status,
                         "servo_angle": f"{int(current_servo_angle)}°",
                         "servo_action": action_str,
-                        "defects": track.defect_classes if track.defect_classes else ["None (Fresh)"],
+                        "defects": list(track.defect_classes) if track.defect_classes else ["None (Fresh)"],
                         "detections": [{
                             "fruit": track.fruit_type,
                             "condition": track.status.lower(),
@@ -914,7 +914,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 status_dict["recent_events"] = list(hub.recent_events)
                 status_dict["selected_fruit"] = hub.selected_fruit
                 status_dict["fruit_counts"] = dict(hub.fruit_counts)
-            self.wfile.write(json.dumps(status_dict).encode("utf-8"))
+            self.wfile.write(json.dumps(status_dict, default=list).encode("utf-8"))
 
         elif path == "/api/set_fruit":
             fruit = params.get("fruit", ["all"])[0].lower().strip()
