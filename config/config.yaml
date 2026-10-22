@@ -1,0 +1,77 @@
+# Agri_Sorter Unified System Configuration
+# Targets Raspberry Pi 4 / Raspberry Pi AI HAT (Hailo-8L) & Desktop Simulation
+
+classes:
+  fruits:
+    - apple
+    - banana
+    - orange
+    - mango
+  conditions:
+    - fresh
+    - rotten
+    - bruised
+    - scarred
+    - bug_bite
+  # 20 compound classes: fruit_condition
+  compound_classes:
+    - apple_fresh
+    - apple_rotten
+    - apple_bruised
+    - apple_scarred
+    - apple_bug_bite
+    - banana_fresh
+    - banana_rotten
+    - banana_bruised
+    - banana_scarred
+    - banana_bug_bite
+    - orange_fresh
+    - orange_rotten
+    - orange_bruised
+    - orange_scarred
+    - orange_bug_bite
+    - mango_fresh
+    - mango_rotten
+    - mango_bruised
+    - mango_scarred
+    - mango_bug_bite
+
+detection:
+  conf_threshold: 0.40
+  iou_threshold: 0.45
+  input_size: [640, 640]
+  model_hef: "models/detector/yolo11n_fruit.hef"
+  model_onnx: "models/detector/yolo11n.onnx"
+  model_pt: "models/detector/yolo11n.pt"
+  fallback_to_cpu: true
+
+tracking:
+  tracker_type: "bytetrack"
+  consecutive_defect_frames: 3 # N frames required before flipping FRESH -> REJECT
+  track_buffer: 30
+  match_thresh: 0.7
+  egress_line_y_ratio: 0.85 # Frame Y ratio where fruit leaves camera ROI
+
+hardware:
+  ultrasonic:
+    trigger_pin: 23 # BCM GPIO 23
+    echo_pin: 24    # BCM GPIO 24 (via voltage divider: 5V Echo -> 3.3V Pi)
+    trigger_distance_cm: 10.0
+    echo_timeout_ms: 30.0
+    debounce_samples: 3
+    refractory_lockout_s: 0.25
+  servo:
+    pin: 18 # BCM GPIO 18 (Hardware PWM0)
+    rest_angle: 0.0
+    reject_angle: 90.0
+    pulse_hold_time_s: 0.5
+    min_pulse_width: 0.0005
+    max_pulse_width: 0.0025
+  fail_safe:
+    reject_on_empty_queue: true
+
+conveyor:
+  belt_speed_mps: 0.12
+
+logging:
+  event_log_path: "runtime/fruit_events.csv"

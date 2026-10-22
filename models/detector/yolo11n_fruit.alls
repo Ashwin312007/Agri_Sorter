@@ -1,0 +1,15 @@
+# ==============================================================================
+# Hailo Model Script (.alls) for Agri_Sorter Edge Fruit Detector
+# Target Accelerator: Raspberry Pi AI HAT (hailo8l)
+# Model: yolo11n_fruit
+# Input Resolution: 640x640x3
+# ==============================================================================
+
+# Normalization parameters (rescale [0, 255] RGB pixel range to [0.0, 1.0])
+normalization1 = normalization([0.0, 0.0, 0.0], [255.0, 255.0, 255.0])
+
+# Hardware allocation configuration for Hailo-8L
+set_power_mode(ULTRA_PERFORMANCE)
+
+# Performance optimization allocation for 20 compound classes
+performance_param(compiler_optimization_level=max)

@@ -23,7 +23,6 @@ STANDARD_FEATURES = [
 class RuleBasedAcousticClassifier:
     """Lightweight rule-based acoustic quality classifier.
 
-    Zero ML dependencies (no joblib, xgboost, pandas, scikit-learn).
     Evaluates 40 kHz ultrasonic ToF and amplitude against acoustic attenuation thresholds.
     """
 
@@ -79,10 +78,10 @@ class RuleBasedAcousticClassifier:
 
 
 def load_prediction_model(model_path: str):
-    """Load trained classifier model and its feature list from joblib or JSON file.
+    """Load acoustic classifier model and its feature list from JSON file.
 
     Args:
-        model_path: Path to joblib or json file.
+        model_path: Path to json rule model file.
 
     Returns:
         Tuple[Any, List[str]]: (model_object, list_of_features)
@@ -96,22 +95,8 @@ def load_prediction_model(model_path: str):
         model = RuleBasedAcousticClassifier.from_dict(data)
         return model, features
 
-    try:
-        import joblib
-        payload = joblib.load(str(path))
-        if isinstance(payload, dict) and "model" in payload:
-            model = payload["model"]
-            features = payload.get("features", STANDARD_FEATURES)
-        else:
-            model = payload
-            features = STANDARD_FEATURES
-        return model, features
-    except ImportError:
-        warnings.warn("joblib is not installed. Using lightweight RuleBasedAcousticClassifier fallback.")
-        return RuleBasedAcousticClassifier(), STANDARD_FEATURES
-    except Exception as exc:
-        warnings.warn(f"Failed to load joblib model from {model_path}: {exc}; using RuleBasedAcousticClassifier fallback.")
-        return RuleBasedAcousticClassifier(), STANDARD_FEATURES
+    warnings.warn(f"Unsupported model format: {model_path}. Using lightweight RuleBasedAcousticClassifier fallback.")
+    return RuleBasedAcousticClassifier(), STANDARD_FEATURES
 
 
 def predict_row(
@@ -123,7 +108,7 @@ def predict_row(
     weight_g: Optional[float] = None,
     temperature_c: Optional[float] = None,
 ) -> int:
-    """Predict internal label using loaded model or rule evaluator."""
+    """Predict internal label using acoustic rule evaluator."""
     if isinstance(model, dict):
         amp_thresh = float(model.get("amplitude_threshold", 45.0))
         return 0 if received_amplitude >= amp_thresh else 1
@@ -143,14 +128,7 @@ def predict_row(
             pred = model.predict(row_vals)[0]
             return int(pred)
         except Exception:
-            # Fall back to DataFrame if model strictly requires pandas feature names
-            try:
-                import pandas as pd
-                df = pd.DataFrame([{k: feature_map.get(k, float("nan")) for k in features}])[features]
-                pred = model.predict(df)[0]
-                return int(pred)
-            except Exception:
-                return 0 if received_amplitude >= 45 else 1
+            return 0 if received_amplitude >= 45 else 1
 
     return 0 if received_amplitude >= 45 else 1
 
@@ -316,7 +294,7 @@ def main() -> None:
     parser.add_argument("--config", default=None, help="Path to hardware.toml configuration file.")
     parser.add_argument("--count", type=int, default=1, help="Number of measurements to capture.")
     parser.add_argument("--csv-out", default=None, help="Output CSV path (default: stdout).")
-    parser.add_argument("--model", default=None, help="Path to trained XGBoost internal model (.joblib).")
+    parser.add_argument("--model", default=None, help="Path to acoustic rule configuration (.json).")
     parser.add_argument("--mock", action="store_true", help="Run with mock hardware drivers.")
     parser.add_argument("--delay", type=float, default=0.1, help="Delay in seconds between measurements.")
     parser.add_argument("--diameter", type=float, default=None, help="Fruit diameter in mm (optional auxiliary feature).")
