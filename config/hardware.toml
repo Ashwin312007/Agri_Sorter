@@ -34,5 +34,9 @@ baud_rate = 115200
 baseline_distance_mm = 240
 fruit_threshold_mm = 30
 timeout_s = 1.0
+trig_pin = 9
+echo_pin = 10
+status_led_pin = 13
+
 
 

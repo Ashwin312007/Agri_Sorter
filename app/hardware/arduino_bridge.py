@@ -36,6 +36,7 @@ class UltrasonicReading:
     dist_mm: float
     is_fruit: bool
     timestamp: float
+    fruit_diameter_mm: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert reading to dictionary representation."""
@@ -44,13 +45,15 @@ class UltrasonicReading:
             "dist_mm": self.dist_mm,
             "is_fruit": self.is_fruit,
             "timestamp": self.timestamp,
+            "fruit_diameter_mm": self.fruit_diameter_mm,
         }
 
 
 def discover_serial_ports() -> List[str]:
-    """Auto-discover potential Arduino USB serial ports.
+    """Auto-discover potential Arduino Uno / microcontroller USB serial ports.
 
     Checks /dev/ttyACM*, /dev/ttyUSB* on Linux/macOS and COM* on Windows.
+    Matches Arduino Uno (VID 0x2341, PID 0x0043 / 0x0001), CH340, FTDI, CP210x, ESP32, etc.
 
     Returns:
         List[str]: List of matching serial port paths.
@@ -62,18 +65,39 @@ def discover_serial_ports() -> List[str]:
         try:
             for p in serial.tools.list_ports.comports():
                 dev = p.device
-                # Check for Arduino-like or standard USB serial identifiers
                 desc = (p.description or "").lower()
                 hwid = (p.hwid or "").lower()
+                vid = getattr(p, "vid", None)
+                pid = getattr(p, "pid", None)
+
+                # Arduino Uno: VID 0x2341, PID 0x0043 (Uno R3) / 0x0001 (Uno R1/R2)
+                is_arduino = (
+                    vid == 0x2341
+                    or ("2341:0043" in hwid)
+                    or ("2341:0001" in hwid)
+                    or ("2341" in hwid and ("0043" in hwid or "0001" in hwid))
+                    or (vid is not None and vid == 0x2341 and (pid in (0x0043, 0x0001) if pid is not None else True))
+                    or "arduino" in desc
+                    or "uno" in desc
+                )
+
+                # ESP32-C6 USB Serial/JTAG: VID 0x303a, PID 0x1001
+                is_esp32_c6 = (
+                    (vid == 0x303A and pid == 0x1001)
+                    or ("303a:1001" in hwid)
+                    or ("303a" in hwid and "1001" in hwid)
+                )
+
+                keywords = ("arduino", "uno", "ch340", "ftdi", "cp210", "esp32", "espressif", "jtag")
+                matches_keyword = any(k in desc or k in hwid for k in keywords)
+
                 if (
-                    "acm" in dev.lower()
+                    is_arduino
+                    or is_esp32_c6
+                    or matches_keyword
+                    or "acm" in dev.lower()
                     or "usb" in dev.lower()
                     or dev.upper().startswith("COM")
-                    or "arduino" in desc
-                    or "ch340" in desc
-                    or "cp210" in desc
-                    or "ftdi" in desc
-                    or "arduino" in hwid
                 ):
                     if dev not in ports:
                         ports.append(dev)
@@ -92,7 +116,7 @@ def discover_serial_ports() -> List[str]:
 
 
 class ArduinoBridge:
-    """Thread-safe USB serial bridge for Arduino HC-SR04 ultrasonic sensor."""
+    """Thread-safe USB serial bridge for Arduino / ESP32-C6 HC-SR04 ultrasonic sensor."""
 
     def __init__(
         self,
@@ -104,20 +128,25 @@ class ArduinoBridge:
         baseline_distance_mm: float = 240.0,
         fruit_threshold_mm: float = 30.0,
     ) -> None:
-        """Initialize Arduino serial bridge.
+        """Initialize Arduino / ESP32 serial bridge.
 
         Args:
             port: Serial port path (e.g. '/dev/ttyACM0', 'COM3') or 'auto'.
             baud_rate: Serial baud rate (default: 115200).
             timeout_s: Serial communication read timeout in seconds.
             mock: If True, operates in simulated mock mode without hardware.
-            config: Optional configuration dict containing [arduino] settings.
+            config: Optional configuration dict containing [esp32] or [arduino] settings.
             baseline_distance_mm: Belt baseline distance in mm.
             fruit_threshold_mm: Height delta in mm indicating fruit presence.
         """
-        # Load config parameters if provided
-        if config and "arduino" in config:
-            cfg = config["arduino"]
+        # Load config parameters if provided (checks [arduino] first, then falls back to [esp32])
+        cfg = {}
+        if config:
+            if "arduino" in config:
+                cfg = config["arduino"]
+            elif "esp32" in config:
+                cfg = config["esp32"]
+        if cfg:
             port = cfg.get("port", port)
             baud_rate = cfg.get("baud_rate", baud_rate)
             timeout_s = cfg.get("timeout_s", timeout_s)
@@ -250,11 +279,20 @@ class ArduinoBridge:
             dist = float(data["dist_mm"])
             fruit = bool(data.get("fruit", 0))
             ts = timestamp if timestamp is not None else time.time()
+
+            if "fruit_diameter_mm" in data and data["fruit_diameter_mm"] is not None:
+                fruit_diameter = float(data["fruit_diameter_mm"])
+            elif fruit:
+                fruit_diameter = max(0.0, float(self.baseline_distance_mm - dist))
+            else:
+                fruit_diameter = 0.0
+
             return UltrasonicReading(
                 tof_us=tof,
                 dist_mm=dist,
                 is_fruit=fruit,
                 timestamp=ts,
+                fruit_diameter_mm=fruit_diameter,
             )
 
         return None
@@ -379,30 +417,39 @@ class ArduinoBridge:
                 override = self._mock_custom_override
 
             if override is not None:
+                diam = (
+                    override.fruit_diameter_mm
+                    if override.fruit_diameter_mm is not None
+                    else (68.0 if override.is_fruit else 0.0)
+                )
                 reading = UltrasonicReading(
                     tof_us=override.tof_us,
                     dist_mm=override.dist_mm,
                     is_fruit=override.is_fruit,
                     timestamp=now,
+                    fruit_diameter_mm=diam,
                 )
             else:
                 cycle = (cycle + 1) % 160  # ~4 second full repeating cycle at 40Hz
                 # Simulate fruit passing during cycle 40..80
                 is_fruit = (40 <= cycle <= 80)
                 if is_fruit:
-                    # Apex distance ~ 72 mm, ToF ~ 4210 us (matching prompt specification)
+                    # Apex distance ~ 72 mm, ToF ~ 4210 us, realistic diameter ~ 68 mm (65-75 mm range)
                     dist_mm = 72.0
                     tof_us = 4210.0
+                    fruit_diameter_mm = 68.0
                 else:
-                    # Empty belt baseline ~ 240 mm, ToF ~ 14000 us
+                    # Empty belt baseline ~ 240 mm, ToF ~ 14000 us, 0.0 mm diameter
                     dist_mm = self.baseline_distance_mm
                     tof_us = (self.baseline_distance_mm * 2000.0) / 343.0
+                    fruit_diameter_mm = 0.0
 
                 reading = UltrasonicReading(
                     tof_us=tof_us,
                     dist_mm=dist_mm,
                     is_fruit=is_fruit,
                     timestamp=now,
+                    fruit_diameter_mm=fruit_diameter_mm,
                 )
 
             with self._lock:

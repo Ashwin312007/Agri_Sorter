@@ -21,11 +21,13 @@ def test_ultrasonic_reading_dataclass():
         dist_mm=72.0,
         is_fruit=True,
         timestamp=now,
+        fruit_diameter_mm=68.0,
     )
     assert reading.tof_us == 4210.0
     assert reading.dist_mm == 72.0
     assert reading.is_fruit is True
     assert reading.timestamp == now
+    assert reading.fruit_diameter_mm == 68.0
 
     d = reading.to_dict()
     assert d == {
@@ -33,29 +35,42 @@ def test_ultrasonic_reading_dataclass():
         "dist_mm": 72.0,
         "is_fruit": True,
         "timestamp": now,
+        "fruit_diameter_mm": 68.0,
     }
 
 
 def test_parse_line_valid():
-    """Verify parse_line correctly parses valid Arduino JSON output."""
-    bridge = ArduinoBridge(mock=True)
+    """Verify parse_line correctly parses valid Arduino Uno JSON output."""
+    bridge = ArduinoBridge(mock=True, baseline_distance_mm=240.0)
 
-    # Standard reading with fruit detected
-    line1 = '{"tof_us": 4210, "dist_mm": 72, "fruit": 1}\n'
-    r1 = bridge.parse_line(line1, timestamp=100.0)
-    assert r1 is not None
-    assert r1.tof_us == 4210.0
-    assert r1.dist_mm == 72.0
-    assert r1.is_fruit is True
-    assert r1.timestamp == 100.0
+    # Arduino Uno reading with explicit fruit_diameter_mm
+    line_arduino_diam = '{"tof_us": 4210, "dist_mm": 72, "fruit_diameter_mm": 68, "fruit": 1}\n'
+    r_diam = bridge.parse_line(line_arduino_diam, timestamp=100.0)
+    assert r_diam is not None
+    assert r_diam.tof_us == 4210.0
+    assert r_diam.dist_mm == 72.0
+    assert r_diam.is_fruit is True
+    assert r_diam.fruit_diameter_mm == 68.0
+    assert r_diam.timestamp == 100.0
+
+    # Arduino reading without explicit fruit_diameter_mm (calculated dynamically from baseline)
+    line_arduino_fallback = '{"tof_us": 4210, "dist_mm": 72, "fruit": 1}\n'
+    r_fallback = bridge.parse_line(line_arduino_fallback, timestamp=150.0)
+    assert r_fallback is not None
+    assert r_fallback.tof_us == 4210.0
+    assert r_fallback.dist_mm == 72.0
+    assert r_fallback.is_fruit is True
+    assert r_fallback.fruit_diameter_mm == 168.0  # 240.0 - 72.0
+    assert r_fallback.timestamp == 150.0
 
     # Baseline reading without fruit
-    line2 = '{"tof_us": 13994.1, "dist_mm": 240.0, "fruit": 0}'
+    line2 = '{"tof_us": 13994.1, "dist_mm": 240.0, "fruit_diameter_mm": 0, "fruit": 0}'
     r2 = bridge.parse_line(line2, timestamp=200.0)
     assert r2 is not None
     assert r2.tof_us == pytest.approx(13994.1)
     assert r2.dist_mm == 240.0
     assert r2.is_fruit is False
+    assert r2.fruit_diameter_mm == 0.0
     assert r2.timestamp == 200.0
 
 
@@ -79,7 +94,7 @@ def test_parse_line_invalid_and_ignored():
 
 
 def test_mock_reading_generator():
-    """Verify mock mode generates realistic 40Hz continuous readings."""
+    """Verify mock mode generates realistic 40Hz continuous readings with fruit diameter."""
     bridge = ArduinoBridge(mock=True)
     assert bridge.get_latest_reading() is None
 
@@ -93,6 +108,8 @@ def test_mock_reading_generator():
         assert r.tof_us > 0.0
         assert r.dist_mm > 0.0
         assert isinstance(r.is_fruit, bool)
+        assert r.fruit_diameter_mm is not None
+        assert r.fruit_diameter_mm >= 0.0
     finally:
         bridge.stop()
 
@@ -102,7 +119,13 @@ def test_mock_reading_generator():
 def test_set_mock_reading_override():
     """Verify manual override injection for testing edge conditions."""
     bridge = ArduinoBridge(mock=True)
-    custom = UltrasonicReading(tof_us=9999.0, dist_mm=123.0, is_fruit=True, timestamp=1234.0)
+    custom = UltrasonicReading(
+        tof_us=9999.0,
+        dist_mm=123.0,
+        is_fruit=True,
+        timestamp=1234.0,
+        fruit_diameter_mm=71.5,
+    )
     bridge.set_mock_reading(custom)
 
     r = bridge.get_latest_reading()
@@ -110,6 +133,7 @@ def test_set_mock_reading_override():
     assert r.tof_us == 9999.0
     assert r.dist_mm == 123.0
     assert r.is_fruit is True
+    assert r.fruit_diameter_mm == 71.5
 
 
 def test_context_manager():
@@ -147,6 +171,110 @@ def test_auto_discover_ports():
         assert "/dev/ttyACM0" in ports
 
 
+def test_esp32_c6_port_discovery():
+    """Verify auto-discovery detects ESP32-C6 native USB CDC / JTAG serial device."""
+    # ESP32-C6 with Espressif VID 0x303A and PID 0x1001
+    esp_port = MagicMock()
+    esp_port.device = "/dev/ttyACM1"
+    esp_port.description = "USB JTAG/serial debug unit"
+    esp_port.hwid = "USB VID:PID=303a:1001 SER=123456"
+    esp_port.vid = 0x303A
+    esp_port.pid = 0x1001
+
+    with patch("serial.tools.list_ports.comports", return_value=[esp_port]):
+        ports = discover_serial_ports()
+        assert "/dev/ttyACM1" in ports
+
+    # ESP32 CP210x or CH340 UART bridge
+    esp_uart = MagicMock()
+    esp_uart.device = "/dev/ttyUSB0"
+    esp_uart.description = "CP2102 USB to UART Bridge Controller - ESP32"
+    esp_uart.hwid = "USB VID:PID=10c4:ea60"
+    esp_uart.vid = 0x10C4
+    esp_uart.pid = 0xEA60
+
+    with patch("serial.tools.list_ports.comports", return_value=[esp_uart]):
+        ports = discover_serial_ports()
+        assert "/dev/ttyUSB0" in ports
+
+
+def test_arduino_uno_port_discovery():
+    """Verify auto-discovery detects Arduino Uno with VID 0x2341 (Uno R3 0x0043 and Uno R1/R2 0x0001)."""
+    # Arduino Uno R3: VID 0x2341, PID 0x0043
+    uno_r3_port = MagicMock()
+    uno_r3_port.device = "/dev/ttyACM0"
+    uno_r3_port.description = "Arduino Uno (CDC ACM)"
+    uno_r3_port.hwid = "USB VID:PID=2341:0043"
+    uno_r3_port.vid = 0x2341
+    uno_r3_port.pid = 0x0043
+
+    with patch("serial.tools.list_ports.comports", return_value=[uno_r3_port]):
+        ports = discover_serial_ports()
+        assert "/dev/ttyACM0" in ports
+
+    # Arduino Uno R1/R2: VID 0x2341, PID 0x0001
+    uno_r1_port = MagicMock()
+    uno_r1_port.device = "/dev/ttyACM1"
+    uno_r1_port.description = "Arduino Uno"
+    uno_r1_port.hwid = "USB VID:PID=2341:0001"
+    uno_r1_port.vid = 0x2341
+    uno_r1_port.pid = 0x0001
+
+    with patch("serial.tools.list_ports.comports", return_value=[uno_r1_port]):
+        ports = discover_serial_ports()
+        assert "/dev/ttyACM1" in ports
+
+    # Arduino clone with CH340 chip
+    ch340_port = MagicMock()
+    ch340_port.device = "/dev/ttyUSB0"
+    ch340_port.description = "USB-SERIAL CH340"
+    ch340_port.hwid = "USB VID:PID=1a86:7523"
+    ch340_port.vid = 0x1A86
+    ch340_port.pid = 0x7523
+
+    with patch("serial.tools.list_ports.comports", return_value=[ch340_port]):
+        ports = discover_serial_ports()
+        assert "/dev/ttyUSB0" in ports
+
+
+def test_bridge_config_arduino_section():
+    """Verify ArduinoBridge loads settings from primary [arduino] config section."""
+    cfg = {
+        "arduino": {
+            "port": "/dev/ttyACM2",
+            "baud_rate": 115200,
+            "baseline_distance_mm": 240.0,
+            "fruit_threshold_mm": 30.0,
+            "timeout_s": 1.5,
+        }
+    }
+    bridge = ArduinoBridge(mock=True, config=cfg)
+    assert bridge.configured_port == "/dev/ttyACM2"
+    assert bridge.baud_rate == 115200
+    assert bridge.baseline_distance_mm == 240.0
+    assert bridge.fruit_threshold_mm == 30.0
+    assert bridge.timeout_s == 1.5
+
+
+def test_bridge_config_esp32_section():
+    """Verify ArduinoBridge loads settings from [esp32] config section."""
+    cfg = {
+        "esp32": {
+            "port": "/dev/ttyACM5",
+            "baud_rate": 115200,
+            "baseline_distance_mm": 260.0,
+            "fruit_threshold_mm": 35.0,
+            "timeout_s": 2.0,
+        }
+    }
+    bridge = ArduinoBridge(mock=True, config=cfg)
+    assert bridge.configured_port == "/dev/ttyACM5"
+    assert bridge.baud_rate == 115200
+    assert bridge.baseline_distance_mm == 260.0
+    assert bridge.fruit_threshold_mm == 35.0
+    assert bridge.timeout_s == 2.0
+
+
 def test_fallback_to_mock_when_port_unavailable():
     """Verify that specifying a non-existent port falls back gracefully to mock mode."""
     bridge = ArduinoBridge(port="/dev/nonexistent_serial_device_xyz123", mock=False)
@@ -179,6 +307,7 @@ def test_conveyor_pipeline_integration_with_arduino():
             dist_mm=75.0,
             is_fruit=True,
             timestamp=time.time(),
+            fruit_diameter_mm=68.5,
         )
         coord.arduino_bridge.set_mock_reading(custom_reading)
 
@@ -198,6 +327,7 @@ def test_conveyor_pipeline_integration_with_arduino():
         assert track.status == "MEASURED"
         assert track.ultrasonic_travel_time_us == pytest.approx(4250.0)
         assert track.ultrasonic_amplitude == 75
+        assert track.fruit_diameter_mm == pytest.approx(68.5)
         assert track.final_grade == "FIRST_QUALITY"
     finally:
         coord.stop()

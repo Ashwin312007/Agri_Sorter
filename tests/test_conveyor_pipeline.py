@@ -22,6 +22,7 @@ def test_fruit_track_dataclass():
         bbox=(10, 20, 30, 40),
         visual_label="fresh",
         visual_confidence=0.95,
+        fruit_diameter_mm=72.5,
     )
     assert track.track_id == 10
     assert track.entry_time == 100.0
@@ -30,6 +31,7 @@ def test_fruit_track_dataclass():
     assert track.visual_confidence == 0.95
     assert track.ultrasonic_travel_time_us is None
     assert track.ultrasonic_amplitude is None
+    assert track.fruit_diameter_mm == 72.5
     assert track.internal_label_pred is None
     assert track.final_grade is None
     assert track.status == "IN_TRANSIT"
@@ -39,6 +41,7 @@ def test_fruit_track_dataclass():
     assert d["track_id"] == 10
     assert d["status"] == "IN_TRANSIT"
     assert d["bbox"] == "10:20:30:40"
+    assert d["fruit_diameter_mm"] == 72.5
 
 
 def test_conveyor_speed_safety_checks():
@@ -171,6 +174,68 @@ def test_grading_with_internal_model(tmp_path: Path, monkeypatch):
     assert t_damaged.final_grade == "SECOND_QUALITY"
     assert t_damaged.internal_label_pred == 1
     assert t_damaged.internal_fallback is False
+
+
+def test_station1_ultrasonic_evaluation_passes_fruit_diameter(tmp_path: Path, monkeypatch):
+    """Verify Station 1 extracts fruit_diameter_mm from MCU bridge and passes it to internal model."""
+    from app.hardware.arduino_bridge import UltrasonicReading
+
+    recorded_kwargs = []
+
+    def fake_predict_row(**kwargs):
+        recorded_kwargs.append(kwargs)
+        return 0
+
+    monkeypatch.setattr("app.ultrasonic_capture.predict_row", fake_predict_row)
+
+    coord = ConveyorCoordinator(
+        mock=True,
+        speed_override=0.10,
+        use_arduino=True,
+    )
+    coord.internal_model = MagicMock()
+    coord.internal_features = [
+        "travel_time_us",
+        "received_amplitude",
+        "fruit_diameter_mm",
+    ]
+    coord.start()
+    try:
+        # Pre-seed mock reading with realistic Arduino Uno parameters
+        reading = UltrasonicReading(
+            tof_us=4210.0,
+            dist_mm=72.0,
+            is_fruit=True,
+            timestamp=100.0,
+            fruit_diameter_mm=68.0,
+        )
+        coord.arduino_bridge.set_mock_reading(reading)
+
+        track = FruitTrack(
+            track_id=1,
+            entry_time=10.0,
+            bbox=(0, 0, 50, 50),
+            visual_label="fresh",
+            visual_confidence=0.98,
+        )
+        coord.add_track(track)
+
+        # Trigger arrival at Station 1 (10.0 + 0.30 / 0.10 = 13.0)
+        t_arrive = coord.get_arrival_time(track)
+        coord.step(timestamp=t_arrive)
+
+        assert track.status == "MEASURED"
+        assert track.ultrasonic_travel_time_us == pytest.approx(4210.0)
+        assert track.ultrasonic_amplitude == 72
+        assert track.fruit_diameter_mm == pytest.approx(68.0)
+        assert track.final_grade == "FIRST_QUALITY"
+
+        assert len(recorded_kwargs) == 1
+        assert recorded_kwargs[0]["travel_time_us"] == pytest.approx(4210.0)
+        assert recorded_kwargs[0]["received_amplitude"] == 72
+        assert recorded_kwargs[0]["fruit_diameter_mm"] == pytest.approx(68.0)
+    finally:
+        coord.stop()
 
 
 
@@ -381,5 +446,48 @@ def test_cli_flags_detect_cadence_and_target_fps(tmp_path: Path, monkeypatch):
     main()
 
     assert csv_file.is_file()
+
+
+def test_cli_flags_use_arduino(tmp_path: Path, monkeypatch):
+    csv_file = tmp_path / "cli_arduino.csv"
+    test_args = [
+        "conveyor_pipeline.py",
+        "--mock",
+        "--duration",
+        "0.1",
+        "--headless",
+        "--use-arduino",
+        "--csv-out",
+        str(csv_file),
+    ]
+    monkeypatch.setattr(sys, "argv", test_args)
+    main()
+
+    assert csv_file.is_file()
+    with open(csv_file, "r", newline="") as f:
+        reader = list(csv.DictReader(f))
+        assert "fruit_diameter_mm" in reader[0]
+
+
+def test_cli_flags_use_esp32(tmp_path: Path, monkeypatch):
+    csv_file = tmp_path / "cli_esp32.csv"
+    test_args = [
+        "conveyor_pipeline.py",
+        "--mock",
+        "--duration",
+        "0.1",
+        "--headless",
+        "--use-esp32",
+        "--csv-out",
+        str(csv_file),
+    ]
+    monkeypatch.setattr(sys, "argv", test_args)
+    main()
+
+    assert csv_file.is_file()
+    with open(csv_file, "r", newline="") as f:
+        reader = list(csv.DictReader(f))
+        assert "fruit_diameter_mm" in reader[0]
+
 
 

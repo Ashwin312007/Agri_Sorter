@@ -65,6 +65,7 @@ CSV_FIELDNAMES = [
     "visual_confidence",
     "ultrasonic_travel_time_us",
     "ultrasonic_amplitude",
+    "fruit_diameter_mm",
     "internal_label_pred",
     "final_grade",
     "status",
@@ -83,6 +84,7 @@ class FruitTrack:
     visual_confidence: float
     ultrasonic_travel_time_us: Optional[float] = None
     ultrasonic_amplitude: Optional[int] = None
+    fruit_diameter_mm: Optional[float] = None
     internal_label_pred: Optional[int] = None
     final_grade: Optional[str] = None  # 'FIRST_QUALITY', 'SECOND_QUALITY', 'REJECT'
     status: str = "IN_TRANSIT"  # 'IN_TRANSIT', 'MEASURED', 'EJECTED'
@@ -98,6 +100,7 @@ class FruitTrack:
             "visual_confidence": self.visual_confidence,
             "ultrasonic_travel_time_us": self.ultrasonic_travel_time_us,
             "ultrasonic_amplitude": self.ultrasonic_amplitude,
+            "fruit_diameter_mm": self.fruit_diameter_mm,
             "internal_label_pred": self.internal_label_pred,
             "final_grade": self.final_grade,
             "status": self.status,
@@ -122,6 +125,7 @@ class ConveyorCoordinator:
         feed_mock_tracks: bool = False,
         detect_cadence: int = 2,
         use_arduino: bool = False,
+        use_esp32: bool = False,
     ) -> None:
         """Initialize conveyor coordinator.
 
@@ -138,6 +142,7 @@ class ConveyorCoordinator:
             feed_mock_tracks: If True, allows bench testing sensors with mock tracks.
             detect_cadence: Run full YOLO detection every N frames (interpolating intermediate frames).
             use_arduino: If True, enables Arduino HC-SR04 USB serial bridge for Station 1.
+            use_esp32: If True, enables ESP32-C6 HC-SR04 USB serial bridge for Station 1.
         """
         if belt_speed_mps is not None and speed_override is None:
             speed_override = belt_speed_mps
@@ -150,7 +155,8 @@ class ConveyorCoordinator:
                 self.config["mock"] = True
 
         self.mock = mock or self.config.get("mock", False)
-        self.use_arduino = use_arduino
+        self.use_arduino = bool(use_arduino or use_esp32)
+        self.use_esp32 = self.use_arduino
         self.strict_safety = strict_safety
         self.headless = headless or not bool(os.environ.get("DISPLAY"))
         self.feed_mock_tracks = feed_mock_tracks
@@ -393,6 +399,7 @@ class ConveyorCoordinator:
                     features=self.internal_features,
                     travel_time_us=track.ultrasonic_travel_time_us or 0.0,
                     received_amplitude=track.ultrasonic_amplitude or 0,
+                    fruit_diameter_mm=track.fruit_diameter_mm,
                 )
                 track.internal_label_pred = pred
                 track.final_grade = "FIRST_QUALITY" if pred == 0 else "SECOND_QUALITY"
@@ -531,14 +538,17 @@ class ConveyorCoordinator:
                     if reading is not None:
                         track.ultrasonic_travel_time_us = float(reading.tof_us)
                         track.ultrasonic_amplitude = int(reading.dist_mm)
+                        track.fruit_diameter_mm = float(reading.fruit_diameter_mm or 0.0)
                     else:
                         meas = self.ultrasonic.measure()
                         track.ultrasonic_travel_time_us = float(meas["travel_time_us"])
                         track.ultrasonic_amplitude = int(meas["received_amplitude"])
+                        track.fruit_diameter_mm = 0.0
                 else:
                     meas = self.ultrasonic.measure()
                     track.ultrasonic_travel_time_us = float(meas["travel_time_us"])
                     track.ultrasonic_amplitude = int(meas["received_amplitude"])
+                    track.fruit_diameter_mm = 0.0
                 self._evaluate_grade(track)
                 track.status = "MEASURED"
                 logger.info(
@@ -588,6 +598,11 @@ class ConveyorCoordinator:
                     "ultrasonic_amplitude": (
                         str(t.ultrasonic_amplitude)
                         if t.ultrasonic_amplitude is not None
+                        else ""
+                    ),
+                    "fruit_diameter_mm": (
+                        f"{t.fruit_diameter_mm:.1f}"
+                        if t.fruit_diameter_mm is not None
                         else ""
                     ),
                     "internal_label_pred": (
@@ -662,10 +677,17 @@ def main() -> None:
         "--use-arduino",
         action="store_true",
         default=False,
-        help="Use Arduino HC-SR04 USB serial bridge for ultrasonic sensing at Station 1",
+        help="Use Arduino Uno HC-SR04 USB serial bridge for ultrasonic sensing at Station 1",
+    )
+    parser.add_argument(
+        "--use-esp32",
+        action="store_true",
+        default=False,
+        help="Alias for --use-arduino (microcontroller HC-SR04 USB serial bridge)",
     )
     args = parser.parse_args()
 
+    use_mcu = bool(args.use_esp32 or args.use_arduino)
     coordinator = ConveyorCoordinator(
         config=args.config,
         mock=args.mock,
@@ -677,7 +699,8 @@ def main() -> None:
         headless=args.headless,
         feed_mock_tracks=args.feed_mock_tracks,
         detect_cadence=args.detect_cadence,
-        use_arduino=args.use_arduino,
+        use_arduino=use_mcu,
+        use_esp32=use_mcu,
     )
 
     coordinator.start()

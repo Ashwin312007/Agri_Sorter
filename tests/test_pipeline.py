@@ -121,3 +121,96 @@ def test_run_capture_with_model_prediction(tmp_path: Path, monkeypatch):
         assert len(reader) == 1
         assert "internal_label_pred" in reader[0]
         assert int(reader[0]["internal_label_pred"]) == 0
+
+
+def test_run_capture_with_arduino_bridge(tmp_path: Path):
+    """Verify run_capture integration with Arduino Uno microcontroller bridge in mock mode."""
+    csv_file = tmp_path / "arduino_capture.csv"
+    rows = run_capture(
+        count=2,
+        csv_out=str(csv_file),
+        mock=True,
+        delay=0.0,
+        use_arduino=True,
+    )
+    assert len(rows) == 2
+    assert "travel_time_us" in rows[0]
+    assert "received_amplitude" in rows[0]
+    assert "fruit_diameter_mm" in rows[0]
+    assert rows[0]["fruit_diameter_mm"] is not None
+
+    with open(csv_file, "r", newline="") as f:
+        reader = list(csv.DictReader(f))
+        assert len(reader) == 2
+        assert "fruit_diameter_mm" in reader[0]
+
+
+def test_run_capture_with_esp32_bridge(tmp_path: Path):
+    """Verify run_capture integration with ESP32 microcontroller bridge in mock mode."""
+    csv_file = tmp_path / "esp32_capture.csv"
+    rows = run_capture(
+        count=2,
+        csv_out=str(csv_file),
+        mock=True,
+        delay=0.0,
+        use_esp32=True,
+    )
+    assert len(rows) == 2
+    assert "travel_time_us" in rows[0]
+    assert "received_amplitude" in rows[0]
+    assert "fruit_diameter_mm" in rows[0]
+    assert rows[0]["fruit_diameter_mm"] is not None
+
+    with open(csv_file, "r", newline="") as f:
+        reader = list(csv.DictReader(f))
+        assert len(reader) == 2
+        assert "fruit_diameter_mm" in reader[0]
+
+
+def test_ultrasonic_capture_cli_flags(tmp_path: Path, monkeypatch):
+    """Verify CLI flags --use-arduino, --use-mcu, and --use-esp32 execute cleanly."""
+    from app.ultrasonic_capture import main as capture_main
+
+    csv_file = tmp_path / "cli_arduino_capture.csv"
+    test_args = [
+        "ultrasonic_capture.py",
+        "--mock",
+        "--count",
+        "1",
+        "--use-arduino",
+        "--csv-out",
+        str(csv_file),
+    ]
+    monkeypatch.setattr(sys, "argv", test_args)
+    capture_main()
+
+    assert csv_file.is_file()
+    with open(csv_file, "r", newline="") as f:
+        reader = list(csv.DictReader(f))
+        assert len(reader) == 1
+        assert "fruit_diameter_mm" in reader[0]
+
+
+def test_ultrasonic_capture_cli_flags_esp32_alias(tmp_path: Path, monkeypatch):
+    """Verify CLI flag --use-esp32 alias executes cleanly."""
+    from app.ultrasonic_capture import main as capture_main
+
+    csv_file = tmp_path / "cli_mcu_capture.csv"
+    test_args = [
+        "ultrasonic_capture.py",
+        "--mock",
+        "--count",
+        "1",
+        "--use-esp32",
+        "--csv-out",
+        str(csv_file),
+    ]
+    monkeypatch.setattr(sys, "argv", test_args)
+    capture_main()
+
+    assert csv_file.is_file()
+    with open(csv_file, "r", newline="") as f:
+        reader = list(csv.DictReader(f))
+        assert len(reader) == 1
+        assert "fruit_diameter_mm" in reader[0]
+

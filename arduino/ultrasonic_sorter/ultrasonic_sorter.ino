@@ -132,19 +132,24 @@ void loop() {
 
     // Fruit detection logic: object detected if distance is significantly less than belt baseline
     int fruit = 0;
+    unsigned long fruit_diameter_mm = 0;
     if (dist_mm > 0 && dist_mm + FRUIT_THRESHOLD_MM <= baseline_distance_mm) {
       fruit = 1;
+      fruit_diameter_mm = (baseline_distance_mm > dist_mm) ? (baseline_distance_mm - dist_mm) : 0;
       digitalWrite(STATUS_LED, HIGH);
     } else {
       fruit = 0;
+      fruit_diameter_mm = 0;
       digitalWrite(STATUS_LED, LOW);
     }
 
-    // JSON formatted output: {"tof_us": 4210, "dist_mm": 72, "fruit": 1}
+    // JSON formatted output: {"tof_us": 4210, "dist_mm": 72, "fruit_diameter_mm": 68, "fruit": 1}
     Serial.print("{\"tof_us\": ");
     Serial.print(tof_us);
     Serial.print(", \"dist_mm\": ");
     Serial.print(dist_mm);
+    Serial.print(", \"fruit_diameter_mm\": ");
+    Serial.print(fruit_diameter_mm);
     Serial.print(", \"fruit\": ");
     Serial.print(fruit);
     Serial.println("}");

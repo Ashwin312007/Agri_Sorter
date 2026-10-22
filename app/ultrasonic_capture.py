@@ -165,12 +165,16 @@ def run_capture(
     diameter: Optional[float] = None,
     weight: Optional[float] = None,
     temperature: Optional[float] = None,
+    use_mcu: bool = False,
+    use_esp32: bool = False,
+    use_arduino: bool = False,
 ) -> List[Dict[str, Any]]:
     """Execute ultrasonic measurement capture loop and write CSV output.
 
     Returns:
         List[Dict[str, Any]]: List of recorded measurement dictionaries.
     """
+    use_mcu = bool(use_mcu or use_esp32 or use_arduino)
     cfg = load_config(config_path)
     model = None
     features = STANDARD_FEATURES
@@ -184,7 +188,7 @@ def run_capture(
             )
 
     fieldnames = ["travel_time_us", "received_amplitude"]
-    if diameter is not None:
+    if diameter is not None or use_mcu:
         fieldnames.append("fruit_diameter_mm")
     if weight is not None:
         fieldnames.append("weight_g")
@@ -209,40 +213,97 @@ def run_capture(
     captured_rows: List[Dict[str, Any]] = []
 
     try:
-        with UltrasonicPipeline(config=cfg, mock=mock) as pipeline:
-            for i in range(count):
-                meas = pipeline.measure()
-                row: Dict[str, Any] = {
-                    "travel_time_us": meas["travel_time_us"],
-                    "received_amplitude": meas["received_amplitude"],
-                }
+        if use_mcu:
+            from app.hardware.arduino_bridge import ArduinoBridge
 
-                if diameter is not None:
-                    row["fruit_diameter_mm"] = diameter
-                if weight is not None:
-                    row["weight_g"] = weight
-                if temperature is not None:
-                    row["temperature_c"] = temperature
+            bridge = ArduinoBridge(config=cfg, mock=mock)
+            bridge.start()
+            try:
+                for i in range(count):
+                    # In mock or hardware mode, ensure at least one reading is acquired
+                    reading = bridge.get_latest_reading()
+                    if reading is None:
+                        t_wait = time.time()
+                        while reading is None and (time.time() - t_wait) < 0.2:
+                            time.sleep(0.01)
+                            reading = bridge.get_latest_reading()
 
-                if model is not None:
-                    pred = predict_row(
-                        model=model,
-                        features=features,
-                        travel_time_us=meas["travel_time_us"],
-                        received_amplitude=meas["received_amplitude"],
-                        fruit_diameter_mm=diameter,
-                        weight_g=weight,
-                        temperature_c=temperature,
+                    tof = float(reading.tof_us) if reading is not None else 4210.0
+                    amp = int(reading.dist_mm) if reading is not None else 72
+                    measured_diameter = (
+                        float(reading.fruit_diameter_mm)
+                        if reading is not None and reading.fruit_diameter_mm is not None
+                        else 0.0
                     )
-                    row["internal_label_pred"] = pred
+                    effective_diameter = diameter if diameter is not None else measured_diameter
 
-                writer.writerow(row)
-                if out_file:
-                    out_file.flush()
-                captured_rows.append(row)
+                    row: Dict[str, Any] = {
+                        "travel_time_us": tof,
+                        "received_amplitude": amp,
+                        "fruit_diameter_mm": effective_diameter,
+                    }
 
-                if delay > 0 and i < count - 1:
-                    time.sleep(delay)
+                    if weight is not None:
+                        row["weight_g"] = weight
+                    if temperature is not None:
+                        row["temperature_c"] = temperature
+
+                    if model is not None:
+                        pred = predict_row(
+                            model=model,
+                            features=features,
+                            travel_time_us=tof,
+                            received_amplitude=amp,
+                            fruit_diameter_mm=effective_diameter,
+                            weight_g=weight,
+                            temperature_c=temperature,
+                        )
+                        row["internal_label_pred"] = pred
+
+                    writer.writerow(row)
+                    if out_file:
+                        out_file.flush()
+                    captured_rows.append(row)
+
+                    if delay > 0 and i < count - 1:
+                        time.sleep(delay)
+            finally:
+                bridge.stop()
+        else:
+            with UltrasonicPipeline(config=cfg, mock=mock) as pipeline:
+                for i in range(count):
+                    meas = pipeline.measure()
+                    row: Dict[str, Any] = {
+                        "travel_time_us": meas["travel_time_us"],
+                        "received_amplitude": meas["received_amplitude"],
+                    }
+
+                    if diameter is not None:
+                        row["fruit_diameter_mm"] = diameter
+                    if weight is not None:
+                        row["weight_g"] = weight
+                    if temperature is not None:
+                        row["temperature_c"] = temperature
+
+                    if model is not None:
+                        pred = predict_row(
+                            model=model,
+                            features=features,
+                            travel_time_us=meas["travel_time_us"],
+                            received_amplitude=meas["received_amplitude"],
+                            fruit_diameter_mm=diameter,
+                            weight_g=weight,
+                            temperature_c=temperature,
+                        )
+                        row["internal_label_pred"] = pred
+
+                    writer.writerow(row)
+                    if out_file:
+                        out_file.flush()
+                    captured_rows.append(row)
+
+                    if delay > 0 and i < count - 1:
+                        time.sleep(delay)
     finally:
         if out_file:
             out_file.close()
@@ -261,6 +322,9 @@ def main() -> None:
     parser.add_argument("--diameter", type=float, default=None, help="Fruit diameter in mm (optional auxiliary feature).")
     parser.add_argument("--weight", type=float, default=None, help="Fruit weight in grams (optional auxiliary feature).")
     parser.add_argument("--temperature", type=float, default=None, help="Ambient temperature in °C (optional auxiliary feature).")
+    parser.add_argument("--use-arduino", action="store_true", help="Read ultrasonic samples from Arduino Uno USB serial bridge.")
+    parser.add_argument("--use-mcu", action="store_true", help="Alias for --use-arduino (microcontroller USB serial bridge).")
+    parser.add_argument("--use-esp32", action="store_true", help="Alias for --use-arduino.")
 
     args = parser.parse_args()
 
@@ -274,6 +338,7 @@ def main() -> None:
         diameter=args.diameter,
         weight=args.weight,
         temperature=args.temperature,
+        use_arduino=bool(args.use_arduino or args.use_mcu or args.use_esp32),
     )
 
 
