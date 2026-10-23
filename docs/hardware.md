@@ -145,9 +145,9 @@ To eliminate this risk, an active clamping network is placed between the LM741 o
    - *Mitigation*: Envelope detection measures relative threshold crossing and peak amplitude, which is resilient against small transmit jitter.
 3. **Op-Amp Noise Floor**:
    - Standard LM741 op-amps exhibit an input noise voltage density of $\sim 20\text{ nV}/\sqrt{\text{Hz}}$. For fine density characterization, modern low-noise rail-to-rail op-amps (such as OPA340 or TLV2372) offer improved dynamic range.
-4. **Machine Learning Feature Dimensionality**:
-   - The XGBoost model trained by `scripts/train_internal.py` expects 5 features (`travel_time_us`, `received_amplitude`, `fruit_diameter_mm`, `weight_g`, `temperature_c`).
-   - The ultrasonic hardware directly captures 2 features (`travel_time_us`, `received_amplitude`). When auxiliary inputs are omitted, missing values are passed as NaNs.
+4. **Ultrasonic Feature Logging**:
+   - The ultrasonic hardware directly captures 2 core features (`travel_time_us`, `received_amplitude`) and can record auxiliary measurements (`fruit_diameter_mm`, `weight_g`, `temperature_c`).
+   - YOLO alone determines fresh vs defective quality classification at the conveyor level.
 
 ---
 
@@ -197,10 +197,9 @@ python3 -m app.ultrasonic_capture \
     --temperature 24.5 \
     --csv-out data/internal/session_01.csv
 
-# 4. Execute with inline model classification
+# 4. Execute ultrasonic batch capture
 python3 -m app.ultrasonic_capture \
     --config config/hardware.toml \
-    --model models/internal/xgb_internal.joblib \
     --count 10 \
-    --csv-out data/internal/predictions.csv
+    --csv-out data/internal/readings.csv
 ```

@@ -94,7 +94,7 @@ def test_timing_and_station_arrival():
     assert track.ultrasonic_travel_time_us == pytest.approx(4200.0)
     assert track.ultrasonic_amplitude == 62
     assert track.final_grade == "FIRST_QUALITY"
-    assert track.internal_fallback is True
+    assert track.internal_fallback is False
 
     # Step at ejection (t = 15.5)
     coord.step(timestamp=15.5)
@@ -127,22 +127,11 @@ def test_grading_logic_defects():
     assert t_bruise.internal_fallback is False
 
 
-def test_grading_with_internal_model(tmp_path: Path, monkeypatch):
-    stub_healthy = MagicMock()
-    stub_healthy.predict.return_value = [0]
-    mock_joblib = MagicMock()
-    mock_joblib.load.return_value = {
-        "model": stub_healthy,
-        "features": ["travel_time_us", "received_amplitude"],
-    }
-    monkeypatch.setitem(sys.modules, "joblib", mock_joblib)
+def test_grading_yolo_alone_determines_quality():
+    """Verify YOLO alone determines fresh vs defective quality grades without XGBoost."""
+    coord = ConveyorCoordinator(mock=True)
 
-    dummy_model_file = tmp_path / "dummy_model.joblib"
-    dummy_model_file.touch()
-
-    coord = ConveyorCoordinator(mock=True, internal_model_path=str(dummy_model_file))
-
-    # Healthy internal prediction
+    # Fresh visual label -> FIRST_QUALITY regardless of acoustic readings
     t_fresh = FruitTrack(
         track_id=5,
         entry_time=0.0,
@@ -150,55 +139,36 @@ def test_grading_with_internal_model(tmp_path: Path, monkeypatch):
         visual_label="fresh",
         visual_confidence=0.99,
         ultrasonic_travel_time_us=4200.0,
-        ultrasonic_amplitude=60,
+        ultrasonic_amplitude=30,  # low amplitude does not override fresh YOLO label
     )
     coord._evaluate_grade(t_fresh)
     assert t_fresh.final_grade == "FIRST_QUALITY"
-    assert t_fresh.internal_label_pred == 0
     assert t_fresh.internal_fallback is False
 
-    # Defect internal prediction
-    stub_damaged = MagicMock()
-    stub_damaged.predict.return_value = [1]
-    coord.internal_model = stub_damaged
+    # Defective visual label -> SECOND_QUALITY / REJECT
     t_damaged = FruitTrack(
         track_id=6,
         entry_time=0.0,
         bbox=(0, 0, 10, 10),
-        visual_label="fresh",
+        visual_label="bruise",
         visual_confidence=0.99,
         ultrasonic_travel_time_us=4200.0,
-        ultrasonic_amplitude=30,
+        ultrasonic_amplitude=60,
     )
     coord._evaluate_grade(t_damaged)
     assert t_damaged.final_grade == "SECOND_QUALITY"
-    assert t_damaged.internal_label_pred == 1
     assert t_damaged.internal_fallback is False
 
 
-def test_station1_ultrasonic_evaluation_passes_fruit_diameter(tmp_path: Path, monkeypatch):
-    """Verify Station 1 extracts fruit_diameter_mm from MCU bridge and passes it to internal model."""
+def test_station1_ultrasonic_evaluation_records_fruit_diameter():
+    """Verify Station 1 extracts fruit_diameter_mm from MCU bridge and records it on the track."""
     from app.hardware.arduino_bridge import UltrasonicReading
-
-    recorded_kwargs = []
-
-    def fake_predict_row(**kwargs):
-        recorded_kwargs.append(kwargs)
-        return 0
-
-    monkeypatch.setattr("app.ultrasonic_capture.predict_row", fake_predict_row)
 
     coord = ConveyorCoordinator(
         mock=True,
         speed_override=0.10,
         use_arduino=True,
     )
-    coord.internal_model = MagicMock()
-    coord.internal_features = [
-        "travel_time_us",
-        "received_amplitude",
-        "fruit_diameter_mm",
-    ]
     coord.start()
     try:
         # Pre-seed mock reading with realistic Arduino Uno parameters
@@ -229,11 +199,6 @@ def test_station1_ultrasonic_evaluation_passes_fruit_diameter(tmp_path: Path, mo
         assert track.ultrasonic_amplitude == 72
         assert track.fruit_diameter_mm == pytest.approx(68.0)
         assert track.final_grade == "FIRST_QUALITY"
-
-        assert len(recorded_kwargs) == 1
-        assert recorded_kwargs[0]["travel_time_us"] == pytest.approx(4210.0)
-        assert recorded_kwargs[0]["received_amplitude"] == 72
-        assert recorded_kwargs[0]["fruit_diameter_mm"] == pytest.approx(68.0)
     finally:
         coord.stop()
 

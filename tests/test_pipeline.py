@@ -1,24 +1,11 @@
-"""Tests for ultrasonic pipeline orchestration, CLI capture, and mock-mode prediction."""
+"""Tests for ultrasonic pipeline orchestration, signal conditioning, and CLI capture."""
 import csv
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 import pytest
 
 from app.hardware.pipeline import UltrasonicPipeline
 from app.ultrasonic_capture import run_capture
-
-
-class StubClassifier:
-    """Mock classifier mimicking an XGBoost model predict() method."""
-
-    def __init__(self, fixed_prediction: int = 1):
-        self.fixed_prediction = fixed_prediction
-        self.calls = []
-
-    def predict(self, X):
-        self.calls.append(X)
-        return [self.fixed_prediction] * len(X)
 
 
 def test_ultrasonic_pipeline_mock_mode():
@@ -87,40 +74,30 @@ def test_run_capture_with_auxiliary_features(tmp_path: Path):
         assert float(reader[0]["temperature_c"]) == pytest.approx(24.8)
 
 
-def test_run_capture_with_model_prediction(tmp_path: Path, monkeypatch):
-    stub = StubClassifier(fixed_prediction=0)
-    mock_joblib = MagicMock()
-    mock_joblib.load.return_value = {
-        "model": stub,
-        "features": [
-            "travel_time_us",
-            "received_amplitude",
-            "fruit_diameter_mm",
-            "weight_g",
-            "temperature_c",
-        ],
-    }
-    monkeypatch.setitem(sys.modules, "joblib", mock_joblib)
-
-    csv_file = tmp_path / "pred_output.csv"
+def test_ultrasonic_signal_conditioning_and_capture(tmp_path: Path):
+    """Verify acoustic signal conditioning and capture without XGBoost dependencies."""
+    csv_file = tmp_path / "conditioned_output.csv"
     rows = run_capture(
-        count=1,
+        count=2,
         csv_out=str(csv_file),
-        model_path="dummy_model.joblib",
         mock=True,
         delay=0.0,
         diameter=74.0,
         weight=180.0,
         temperature=25.0,
     )
-    assert len(rows) == 1
-    assert rows[0]["internal_label_pred"] == 0
+    assert len(rows) == 2
+    assert csv_file.is_file()
 
     with open(csv_file, "r", newline="") as f:
         reader = list(csv.DictReader(f))
-        assert len(reader) == 1
-        assert "internal_label_pred" in reader[0]
-        assert int(reader[0]["internal_label_pred"]) == 0
+        assert len(reader) == 2
+        for r in reader:
+            assert float(r["travel_time_us"]) == pytest.approx(4200.0)
+            assert int(r["received_amplitude"]) == 62
+            assert float(r["fruit_diameter_mm"]) == pytest.approx(74.0)
+            assert float(r["weight_g"]) == pytest.approx(180.0)
+            assert float(r["temperature_c"]) == pytest.approx(25.0)
 
 
 def test_run_capture_with_arduino_bridge(tmp_path: Path):

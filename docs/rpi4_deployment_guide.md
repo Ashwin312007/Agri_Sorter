@@ -161,7 +161,7 @@ The Raspberry Pi 4 introduces substantial architectural changes over the Raspber
   source venv/bin/activate
   pip install -r requirements-pi.txt
   ```
-  This allows the virtualenv to access system-installed `picamera2` and `gpiod` while managing pip-installed ML packages (`ultralytics`, `xgboost`, `adafruit-circuitpython-ads1x15`) cleanly.
+  This allows the virtualenv to access system-installed `picamera2` and `gpiod` while managing pip-installed ML packages (`ultralytics`, `adafruit-circuitpython-ads1x15`) cleanly.
 
 ---
 

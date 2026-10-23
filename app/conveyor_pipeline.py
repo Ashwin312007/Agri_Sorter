@@ -135,7 +135,7 @@ class ConveyorCoordinator:
             speed_override: Optional belt speed override in m/s (or belt_speed_mps).
             belt_speed_mps: Alias for speed_override.
             strict_safety: If True, raises ValueError when speed exceeds max safe speed.
-            internal_model_path: Optional path to internal classifier joblib model.
+            internal_model_path: Deprecated, unused (YOLO alone decides quality grading).
             detector_model_path: Path to YOLO detector model (.onnx or .pt).
             classifier_model_path: Path to external visual classifier model (.onnx or .pt).
             headless: If True, disables cv2 GUI display windows.
@@ -214,11 +214,6 @@ class ConveyorCoordinator:
 
             self.arduino_bridge = ArduinoBridge(config=self.config, mock=self.mock)
 
-        # Initialize internal classification model if present
-        self.internal_model = None
-        self.internal_features = None
-        if internal_model_path:
-            self._load_internal_model(internal_model_path)
 
         # Initialize YOLO vision detector and classifier (if not in mock-only mode)
         self.detector = None
@@ -273,21 +268,6 @@ class ConveyorCoordinator:
             print(f"   Max safe limit: {self.max_safe_speed_mps:.3f} m/s", file=sys.stderr)
             print("   ADS1115 sampling rate may cause missed apex readings!", file=sys.stderr)
             print("=" * 70 + "\n", file=sys.stderr)
-
-    def _load_internal_model(self, model_path: Union[str, Path]) -> None:
-        """Attempt to load trained internal classifier."""
-        path = Path(model_path)
-        if not path.is_file():
-            logger.warning("Internal model path not found: %s", path)
-            return
-        try:
-            from app.ultrasonic_capture import load_prediction_model
-
-            self.internal_model, self.internal_features = load_prediction_model(str(path))
-            logger.info("Loaded internal quality prediction model from %s", path)
-        except Exception as exc:
-            logger.warning("Could not load internal model from %s: %s", path, exc)
-            self.internal_model = None
 
     def start(self) -> None:
         """Start hardware subsystems."""
@@ -377,10 +357,15 @@ class ConveyorCoordinator:
         return track
 
     def _evaluate_grade(self, track: FruitTrack) -> None:
-        """Determine final grade from visual inspection and ultrasonic measurements."""
+        """Determine final grade from YOLO visual classification alone.
+
+        Fresh vs defective is decided entirely by YOLO visual detection/classification:
+        - Defect classes mapped to BAD_LABELS_REJECT -> REJECT
+        - Defect classes mapped to BAD_LABELS_SECOND -> SECOND_QUALITY
+        - Fresh / non-defect -> FIRST_QUALITY
+        """
         label_lower = track.visual_label.strip().lower()
 
-        # Step 1: External visual defect check
         if label_lower in BAD_LABELS:
             if label_lower in BAD_LABELS_REJECT:
                 track.final_grade = "REJECT"
@@ -389,35 +374,8 @@ class ConveyorCoordinator:
             track.internal_fallback = False
             return
 
-        # Step 2: Internal acoustic defect prediction if model available
-        if self.internal_model is not None:
-            try:
-                from app.ultrasonic_capture import predict_row
-
-                pred = predict_row(
-                    model=self.internal_model,
-                    features=self.internal_features,
-                    travel_time_us=track.ultrasonic_travel_time_us or 0.0,
-                    received_amplitude=track.ultrasonic_amplitude or 0,
-                    fruit_diameter_mm=track.fruit_diameter_mm,
-                )
-                track.internal_label_pred = pred
-                track.final_grade = "FIRST_QUALITY" if pred == 0 else "SECOND_QUALITY"
-                track.internal_fallback = False
-                return
-            except Exception as exc:
-                logger.warning(
-                    "Internal model prediction failed for track #%d (%s); falling back to FIRST_QUALITY",
-                    track.track_id,
-                    exc,
-                )
-                track.internal_fallback = True
-                track.final_grade = "FIRST_QUALITY"
-                return
-
-        # Step 3: Graceful fallback when internal model is absent
-        track.internal_fallback = True
         track.final_grade = "FIRST_QUALITY"
+        track.internal_fallback = False
 
     def step(
         self,
@@ -552,12 +510,11 @@ class ConveyorCoordinator:
                 self._evaluate_grade(track)
                 track.status = "MEASURED"
                 logger.info(
-                    "Track #%d MEASURED at Station 1: ToF=%.1f us, Amp=%d -> Grade=%s (fallback=%s)",
+                    "Track #%d MEASURED at Station 1: ToF=%.1f us, Amp=%d -> Grade=%s",
                     track.track_id,
                     track.ultrasonic_travel_time_us,
                     track.ultrasonic_amplitude,
                     track.final_grade,
-                    track.internal_fallback,
                 )
 
             # Station 2: Sorter ejection
@@ -632,12 +589,6 @@ def main() -> None:
         help="Raise error if speed exceeds maximum safe speed",
     )
     parser.add_argument(
-        "--internal-model",
-        type=str,
-        default=None,
-        help="Path to trained internal classifier joblib file",
-    )
-    parser.add_argument(
         "--headless",
         action="store_true",
         default=False,
@@ -693,7 +644,6 @@ def main() -> None:
         mock=args.mock,
         speed_override=args.speed,
         strict_safety=args.strict_safety,
-        internal_model_path=args.internal_model,
         detector_model_path=args.detector_model,
         classifier_model_path=args.classifier_model,
         headless=args.headless,
