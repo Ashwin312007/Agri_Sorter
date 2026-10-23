@@ -8,3 +8,4 @@ runs/
 dataset_apple/
 raw_downloads/
 detections.csv
+yolov5/

@@ -57,7 +57,8 @@ def load_names(sess, cli_names, expected):
 
 
 def open_cam(idx, w, h):
-    cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+    api = cv2.CAP_V4L2 if hasattr(cv2, "CAP_V4L2") and os.name == "posix" else cv2.CAP_ANY
+    cap = cv2.VideoCapture(idx, api)
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
@@ -136,6 +137,7 @@ def main():
     ap.add_argument("--conf", type=float, default=0.25, help="confidence threshold (set to the Phase 4 value)")
     ap.add_argument("--iou", type=float, default=0.45)
     ap.add_argument("--cam", type=int, default=0)
+    ap.add_argument("--source", type=str, default=None, help="image path or directory of images for offline test")
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--imgsz", type=int, default=416)
@@ -165,6 +167,46 @@ def main():
     wr = csv.writer(fcsv)
     if new_csv:
         wr.writerow(["timestamp", "frame", "verdict", "class", "confidence", "x1", "y1", "x2", "y2"])
+
+    if args.source:
+        p = os.path.abspath(args.source)
+        if os.path.isdir(p):
+            exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+            img_files = [os.path.join(p, f) for f in os.listdir(p) if os.path.splitext(f)[1].lower() in exts]
+        elif os.path.isfile(p):
+            img_files = [p]
+        else:
+            sys.exit(f"Source not found: {args.source}")
+
+        print(f"Processing {len(img_files)} image(s) from {args.source}...")
+        for i, img_path in enumerate(img_files, 1):
+            frame = cv2.imread(img_path)
+            if frame is None:
+                continue
+            lb, r, pad = letterbox(frame, args.imgsz)
+            out = sess.run(None, {inp_name: preprocess(lb)})[0]
+            dets = postprocess(out, names, r, pad, frame.shape[:2], args.conf, args.iou)
+            verdict = "REJECT" if any(is_defect(d["name"]) for d in dets) else "FRESH"
+            ts = datetime.now().isoformat(timespec="milliseconds")
+            if dets:
+                for d in dets:
+                    wr.writerow([ts, i, verdict, d["name"], f"{d['conf']:.3f}", *d["box"]])
+            else:
+                wr.writerow([ts, i, verdict, "", "", "", "", "", ""])
+            summary = ", ".join(f"{d['name']}:{d['conf']:.2f}" for d in dets) or "None (Clean)"
+            print(f"[{i}/{len(img_files)}] {os.path.basename(img_path):35s} -> {verdict:6s} | {summary}")
+            if args.save:
+                vis = frame.copy()
+                for d in dets:
+                    x1, y1, x2, y2 = d["box"]
+                    col = (0, 0, 255) if is_defect(d["name"]) else (0, 255, 0)
+                    cv2.rectangle(vis, (x1, y1), (x2, y2), col, 2)
+                    cv2.putText(vis, f"{d['name']} {d['conf']:.2f}", (x1, max(y1 - 6, 12)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 1)
+                cv2.imwrite(f"saved/{os.path.basename(img_path)}", vis)
+        fcsv.close()
+        print("Batch processing complete.")
+        return
 
     cap = None
     frame_no = 0
