@@ -35,7 +35,7 @@ from app.contracts import (
     is_defect_class,
     load_app_config,
 )
-from app.detector import FruitDetector
+from app.detector import FruitDetector, get_defect_color
 from app.hardware_sorter import (
     HardwareCoordinatorThread,
     ServoActuator,
@@ -389,8 +389,8 @@ def inspect_photos(
 
                 det_summary_items.append(f"{det.class_name} ({det.confidence:.2f})")
 
-                # Draw bounding box
-                color = (0, 0, 220) if det.is_defect else (0, 220, 0)
+                # Draw bounding box with calibrated 4-class Stage 2 color coding
+                color = get_defect_color(det.condition)
                 x1, y1, x2, y2 = det.bbox
                 cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
                 cv2.putText(
