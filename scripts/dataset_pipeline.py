@@ -120,10 +120,23 @@ UNIFIED_CLASS_TO_ID = {name: i for i, name in enumerate(UNIFIED_CLASSES)}
 UNIFIED_ID_TO_CLASS = {i: name for i, name in enumerate(UNIFIED_CLASSES)}
 
 
-def generate_unified_data_yaml(target_path: Optional[Path] = None) -> Path:
+def generate_unified_data_yaml(
+    target_path: Optional[Union[str, Path]] = None,
+    output_dir: Optional[Union[str, Path]] = None,
+) -> Path:
     """Generate YOLO data.yaml with nc: 4 for the unified defect taxonomy."""
-    if target_path is None:
+    if output_dir is not None:
+        p = Path(output_dir)
+        target_path = p / "data.yaml" if p.suffix not in (".yaml", ".yml") else p
+    elif target_path is None:
         target_path = REPO_ROOT / "data" / "unified_fruit_defects" / "data.yaml"
+    else:
+        p = Path(target_path)
+        if p.is_dir() or p.suffix not in (".yaml", ".yml"):
+            target_path = p / "data.yaml"
+        else:
+            target_path = p
+
     target_path = Path(target_path)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     yaml_content = {
@@ -497,15 +510,22 @@ ROBOFLOW_PROJECT_MAPPINGS: Dict[str, Dict[str, str]] = {
     },
 }
 
+# Explicit URL / subpath aliases
+ROBOFLOW_PROJECT_MAPPINGS["appledefectsdetection/apple-defect-detection-pkekm/dataset/1"] = ROBOFLOW_PROJECT_MAPPINGS["appledefectsdetection/apple-defect-detection-pkekm"]
+ROBOFLOW_PROJECT_MAPPINGS["guava-h8gxt/guava-dataset"] = ROBOFLOW_PROJECT_MAPPINGS["guava-h8gxt"]
+ROBOFLOW_PROJECT_MAPPINGS["chisilia/guava-disease-5fdvy/dataset/5"] = ROBOFLOW_PROJECT_MAPPINGS["chisilia/guava-disease-5fdvy"]
+ROBOFLOW_PROJECT_MAPPINGS["im-ririo/pomegranate-disease-detection-29ocz-yz4hn/dataset/2"] = ROBOFLOW_PROJECT_MAPPINGS["im-ririo/pomegranate-disease-detection-29ocz-yz4hn"]
+
 # Register RF-01 through RF-14 aliases into ROBOFLOW_PROJECT_MAPPINGS
 for _rf_id, _meta in VERIFIED_ROBOFLOW_PROJECTS.items():
     _proj = _meta["project"]
     if _proj in ROBOFLOW_PROJECT_MAPPINGS:
         ROBOFLOW_PROJECT_MAPPINGS[_rf_id] = ROBOFLOW_PROJECT_MAPPINGS[_proj]
 
-# Add project slug aliases (e.g. 'apple_surface_defects')
+# Add project slug aliases (e.g. 'apple_surface_defects', 'apple-defect-detection-pkekm')
 for _k, _map in list(ROBOFLOW_PROJECT_MAPPINGS.items()):
-    _slug = _k.split("/")[-1]
+    _cleaned_k = re.sub(r"/dataset/\d+$", "", _k)
+    _slug = _cleaned_k.split("/")[-1]
     if _slug not in ROBOFLOW_PROJECT_MAPPINGS:
         ROBOFLOW_PROJECT_MAPPINGS[_slug] = _map
 

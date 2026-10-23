@@ -114,7 +114,7 @@ class TestSorterIntegration:
             ultrasonic=ultrasonic,
             servo=servo,
             event_log_path=csv_path,
-            poll_interval_s=0.01,
+            poll_interval_s=0.5,
             reject_on_empty_queue=True,
         )
         coordinator.start()
