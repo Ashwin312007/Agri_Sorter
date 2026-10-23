@@ -1,4 +1,4 @@
-# Fruit Damage Detector - Handoff (APPLE, paused at Phase 1)
+# Fruit Damage Detector - Handoff (APPLE COMPLETED, Ready for MANGO)
 
 Use this file to continue the project in another tool. It lists what is done, what is verified, what is pending, and all current code.
 
@@ -16,12 +16,12 @@ Use this file to continue the project in another tool. It lists what is done, wh
 
 | Phase | Status |
 |---|---|
-| 0. Check workspace and recipes | Partly done. Recipe check blocked (no dataset version yet). |
-| 1. Dataset | In progress. Two forks made. Paused for user decisions. |
-| 2. Version | Not started. |
-| 3. Train | Not started. |
-| 4. Acceptance gate | Not started. |
-| 5. Raspberry Pi deployment | Code written (see section 6). Not run on a device. |
+| 0. Check workspace and recipes | Complete. Roboflow workspace: `ashwins-workspace-wsaqd`. |
+| 1. Dataset | Complete. RF-01 & RF-02 downloaded, remapped to 4 unified classes (620 images). |
+| 2. Version | Complete. 70/20/10 split (train: 434, val: 124, test: 62). |
+| 3. Train | Complete. Trained `yolov5n` (416x416, 100 epochs) on RTX 4060 GPU with CUDA 12.4. |
+| 4. Acceptance gate | Complete & PASSED. Overall mAP50 = 0.841 (>=0.70 gate), Recall = 0.825. |
+| 5. Raspberry Pi deployment | Deliverables complete on disk (`setup_pi.sh`, `check_env.py`, `detect.py`, `best.onnx`, `README.md`). Verified live on laptop at ~30 FPS. |
 
 ## 3. Phase 0 results (verified)
 
