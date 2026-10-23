@@ -1,0 +1,10 @@
+path: /home/taiki/Agri_Sorter/data/unified_fruit_defects
+train: images/train
+val: images/val
+test: images/test
+nc: 4
+names:
+- Healthy
+- Bruise_or_Scratch
+- Scab_or_Canker
+- Rot_or_Blight

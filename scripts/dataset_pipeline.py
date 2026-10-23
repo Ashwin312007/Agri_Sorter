@@ -107,16 +107,277 @@ SUPPORTED_FRUITS = PRIMARY_FRUITS + ext_extra + leg_extra
 PRIMARY_COMPOUND_CLASSES = [f"{fruit}_{cond}" for fruit in PRIMARY_FRUITS for cond in CONDITIONS]
 ALL_COMPOUND_CLASSES = [f"{fruit}_{cond}" for fruit in SUPPORTED_FRUITS for cond in CONDITIONS]
 
+# ==============================================================================
+# UNIFIED 4-CLASS DEFECT SYSTEM & ROBOFLOW MAPPING DICTIONARY
+# ==============================================================================
+UNIFIED_CLASSES = [
+    "Healthy",
+    "Bruise_or_Scratch",
+    "Scab_or_Canker",
+    "Rot_or_Blight",
+]
+UNIFIED_CLASS_TO_ID = {name: i for i, name in enumerate(UNIFIED_CLASSES)}
+UNIFIED_ID_TO_CLASS = {i: name for i, name in enumerate(UNIFIED_CLASSES)}
+
+
+def generate_unified_data_yaml(target_path: Optional[Path] = None) -> Path:
+    """Generate YOLO data.yaml with nc: 4 for the unified defect taxonomy."""
+    if target_path is None:
+        target_path = REPO_ROOT / "data" / "unified_fruit_defects" / "data.yaml"
+    target_path = Path(target_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    yaml_content = {
+        "path": str(target_path.parent.resolve()),
+        "train": "images/train",
+        "val": "images/val",
+        "test": "images/test",
+        "nc": len(UNIFIED_CLASSES),
+        "names": list(UNIFIED_CLASSES),
+    }
+    with open(target_path, "w", encoding="utf-8") as f:
+        yaml.dump(yaml_content, f, sort_keys=False)
+    return target_path
+
 # Backward-compatibility alias
 FRUITS = PRIMARY_FRUITS
 COMPOUND_CLASSES = PRIMARY_COMPOUND_CLASSES
-
 CLASS_TO_ID = {name: i for i, name in enumerate(ALL_COMPOUND_CLASSES)}
 ID_TO_CLASS = {i: name for i, name in enumerate(ALL_COMPOUND_CLASSES)}
 
 DEFAULT_RAW_DIR = REPO_ROOT / "data" / "raw"
-DEFAULT_OUTPUT_DIR = REPO_ROOT / "data" / "merged"
+DEFAULT_OUTPUT_DIR = REPO_ROOT / "data" / "unified_fruit_defects"
 DEFAULT_MIN_CLASS_THRESHOLD = 300
+
+# -----------------------------------------------------------------------------
+# Comprehensive 13 Roboflow Datasets Mapping to Unified 4 Defect Classes:
+# 0: Healthy, 1: Bruise_or_Scratch, 2: Scab_or_Canker, 3: Rot_or_Blight
+# -----------------------------------------------------------------------------
+ROBOFLOW_PROJECT_MAPPINGS: Dict[str, Dict[str, str]] = {
+    # 1. applesort-esgll/apple_surface_defects
+    "applesort-esgll/apple_surface_defects": {
+        "healthy": "Healthy",
+        "fresh": "Healthy",
+        "objects": "Healthy",
+        "bruising": "Bruise_or_Scratch",
+        "crack": "Bruise_or_Scratch",
+        "insect_bite": "Bruise_or_Scratch",
+        "insect bite": "Bruise_or_Scratch",
+        "rotten": "Rot_or_Blight",
+    },
+    # 2. fruit-disease-detection-nrrei/apple-fruit-disease-detection-zei6u
+    "fruit-disease-detection-nrrei/apple-fruit-disease-detection-zei6u": {
+        "healthy": "Healthy",
+        "blotch": "Scab_or_Canker",
+        "scab": "Scab_or_Canker",
+        "rot": "Rot_or_Blight",
+    },
+    # 3. appledefectdetection/apple-defects-yafjq
+    "appledefectdetection/apple-defects-yafjq": {
+        "healthy": "Healthy",
+        "bruise": "Bruise_or_Scratch",
+        "puncture": "Bruise_or_Scratch",
+        "blemish": "Bruise_or_Scratch",
+        "scab": "Scab_or_Canker",
+        "rot": "Rot_or_Blight",
+    },
+    # 4. chisilia/detection-guava-disease
+    "chisilia/detection-guava-disease": {
+        "scab": "Scab_or_Canker",
+        "phytopthora": "Rot_or_Blight",
+        "styler and root": "Rot_or_Blight",
+        "styler_and_root": "Rot_or_Blight",
+        "styler and root rot": "Rot_or_Blight",
+    },
+    # 5. guava-wedlv/guava-3hezg
+    "guava-wedlv/guava-3hezg": {
+        "healthy": "Healthy",
+        "canker": "Scab_or_Canker",
+        "fruit spot": "Scab_or_Canker",
+        "fruit_spot": "Scab_or_Canker",
+        "disease": "Rot_or_Blight",
+    },
+    # 6. thao-ulmra/guava-qnkee-1uz3i
+    "thao-ulmra/guava-qnkee-1uz3i": {
+        "fresh ripe": "Healthy",
+        "fresh_ripe": "Healthy",
+        "fresh": "Healthy",
+        "ripe": "Healthy",
+        "overripe": "Rot_or_Blight",
+        "decaying": "Rot_or_Blight",
+    },
+    # 7. kaycee-kaye-y-villanueva-mzmks/mango-defect-detection
+    "kaycee-kaye-y-villanueva-mzmks/mango-defect-detection": {
+        "black spot": "Rot_or_Blight",
+        "black_spot": "Rot_or_Blight",
+        "brown spot": "Bruise_or_Scratch",
+        "brown_spot": "Bruise_or_Scratch",
+        "mango scab": "Scab_or_Canker",
+        "mango_scab": "Scab_or_Canker",
+        "scab": "Scab_or_Canker",
+    },
+    # 8. mangoclass/mangograding
+    "mangoclass/mangograding": {
+        "grade a": "Healthy",
+        "grade_a": "Healthy",
+        "grade-a": "Healthy",
+        "grade b": "Bruise_or_Scratch",
+        "grade_b": "Bruise_or_Scratch",
+        "grade-b": "Bruise_or_Scratch",
+        "grade c": "Rot_or_Blight",
+        "grade_c": "Rot_or_Blight",
+        "grade-c": "Rot_or_Blight",
+    },
+    # 9. capstone-2az9h/orange-disease-detection-qunki
+    "capstone-2az9h/orange-disease-detection-qunki": {
+        "fresh": "Healthy",
+        "canker": "Scab_or_Canker",
+        "blackspot": "Rot_or_Blight",
+        "black spot": "Rot_or_Blight",
+        "black_spot": "Rot_or_Blight",
+    },
+    # 10. mydetect-o2wvw/orange-defect
+    "mydetect-o2wvw/orange-defect": {
+        "fresh": "Healthy",
+        "defect": "Rot_or_Blight",
+    },
+    # 11. orangedisease/orange-disease-2twml
+    "orangedisease/orange-disease-2twml": {
+        "fresh": "Healthy",
+        "citrus canker": "Scab_or_Canker",
+        "citrus_canker": "Scab_or_Canker",
+        "canker": "Scab_or_Canker",
+        "black spot": "Rot_or_Blight",
+        "black_spot": "Rot_or_Blight",
+    },
+    # 12. pomegranate-diseases/pomegranate-disease-detection-t7rg0
+    "pomegranate-diseases/pomegranate-disease-detection-t7rg0": {
+        "bacterial blight": "Rot_or_Blight",
+        "bacterial_blight": "Rot_or_Blight",
+        "heart rot": "Rot_or_Blight",
+        "heart_rot": "Rot_or_Blight",
+        "fruit spot": "Scab_or_Canker",
+        "fruit_spot": "Scab_or_Canker",
+    },
+    # 13. orin-f84rr/pomegranate-gqopm
+    "orin-f84rr/pomegranate-gqopm": {
+        "grade-1": "Healthy",
+        "grade 1": "Healthy",
+        "grade_1": "Healthy",
+        "grade-2": "Bruise_or_Scratch",
+        "grade 2": "Bruise_or_Scratch",
+        "grade_2": "Bruise_or_Scratch",
+        "grade-3": "Rot_or_Blight",
+        "grade 3": "Rot_or_Blight",
+        "grade_3": "Rot_or_Blight",
+    },
+}
+
+# Add project slug aliases (e.g. 'apple_surface_defects')
+for _k, _map in list(ROBOFLOW_PROJECT_MAPPINGS.items()):
+    _slug = _k.split("/")[-1]
+    if _slug not in ROBOFLOW_PROJECT_MAPPINGS:
+        ROBOFLOW_PROJECT_MAPPINGS[_slug] = _map
+
+# General unified dictionary for synonyms
+UNIFIED_GENERAL_MAPPING: Dict[str, str] = {
+    # 0: Healthy
+    "healthy": "Healthy",
+    "fresh": "Healthy",
+    "objects": "Healthy",
+    "clean": "Healthy",
+    "good": "Healthy",
+    "sound": "Healthy",
+    "normal": "Healthy",
+    "perfect": "Healthy",
+    "undamaged": "Healthy",
+    "ripe": "Healthy",
+    "fresh_ripe": "Healthy",
+    "fresh ripe": "Healthy",
+    "grade_a": "Healthy",
+    "grade a": "Healthy",
+    "grade-a": "Healthy",
+    "grade_1": "Healthy",
+    "grade 1": "Healthy",
+    "grade-1": "Healthy",
+
+    # 1: Bruise_or_Scratch
+    "bruise": "Bruise_or_Scratch",
+    "bruised": "Bruise_or_Scratch",
+    "bruising": "Bruise_or_Scratch",
+    "crack": "Bruise_or_Scratch",
+    "cracked": "Bruise_or_Scratch",
+    "puncture": "Bruise_or_Scratch",
+    "blemish": "Bruise_or_Scratch",
+    "insect_bite": "Bruise_or_Scratch",
+    "insect bite": "Bruise_or_Scratch",
+    "bug_bite": "Bruise_or_Scratch",
+    "brown_spot": "Bruise_or_Scratch",
+    "brown spot": "Bruise_or_Scratch",
+    "scratch": "Bruise_or_Scratch",
+    "scratched": "Bruise_or_Scratch",
+    "grade_b": "Bruise_or_Scratch",
+    "grade b": "Bruise_or_Scratch",
+    "grade-b": "Bruise_or_Scratch",
+    "grade_2": "Bruise_or_Scratch",
+    "grade 2": "Bruise_or_Scratch",
+    "grade-2": "Bruise_or_Scratch",
+    "mechanical_injury": "Bruise_or_Scratch",
+    "sapburn": "Bruise_or_Scratch",
+
+    # 2: Scab_or_Canker
+    "scab": "Scab_or_Canker",
+    "canker": "Scab_or_Canker",
+    "blotch": "Scab_or_Canker",
+    "citrus_canker": "Scab_or_Canker",
+    "citrus canker": "Scab_or_Canker",
+    "mango_scab": "Scab_or_Canker",
+    "mango scab": "Scab_or_Canker",
+    "fruit_spot": "Scab_or_Canker",
+    "fruit spot": "Scab_or_Canker",
+    "russet": "Scab_or_Canker",
+    "russetting": "Scab_or_Canker",
+    "rust": "Scab_or_Canker",
+    "red_rust": "Scab_or_Canker",
+    "melanose": "Scab_or_Canker",
+    "lesion": "Scab_or_Canker",
+    "lesions": "Scab_or_Canker",
+    "scar": "Scab_or_Canker",
+    "scarred": "Scab_or_Canker",
+
+    # 3: Rot_or_Blight
+    "rot": "Rot_or_Blight",
+    "rotten": "Rot_or_Blight",
+    "black_spot": "Rot_or_Blight",
+    "black spot": "Rot_or_Blight",
+    "blackspot": "Rot_or_Blight",
+    "decay": "Rot_or_Blight",
+    "decayed": "Rot_or_Blight",
+    "decaying": "Rot_or_Blight",
+    "overripe": "Rot_or_Blight",
+    "mold": "Rot_or_Blight",
+    "moldy": "Rot_or_Blight",
+    "defect": "Rot_or_Blight",
+    "disease": "Rot_or_Blight",
+    "phytopthora": "Rot_or_Blight",
+    "styler_and_root": "Rot_or_Blight",
+    "styler and root": "Rot_or_Blight",
+    "styler_rot": "Rot_or_Blight",
+    "styler rot": "Rot_or_Blight",
+    "stylar_rot": "Rot_or_Blight",
+    "bacterial_blight": "Rot_or_Blight",
+    "bacterial blight": "Rot_or_Blight",
+    "heart_rot": "Rot_or_Blight",
+    "heart rot": "Rot_or_Blight",
+    "blight": "Rot_or_Blight",
+    "anthracnose": "Rot_or_Blight",
+    "green_mold": "Rot_or_Blight",
+    "grade_c": "Rot_or_Blight",
+    "grade c": "Rot_or_Blight",
+    "grade-c": "Rot_or_Blight",
+    "grade_3": "Rot_or_Blight",
+    "grade 3": "Rot_or_Blight",
+    "grade-3": "Rot_or_Blight",
+}
 
 
 # ==============================================================================
@@ -142,8 +403,56 @@ class DatasetCatalogEntry:
 
 DATASET_CATALOG: Dict[str, DatasetCatalogEntry] = {
     # -------------------------------------------------------------------------
-    # Roboflow Universe Datasets (10 User Datasets)
+    # Roboflow Universe Datasets (13 User Datasets)
     # -------------------------------------------------------------------------
+    "rf_apple_surface": DatasetCatalogEntry(
+        id="rf_apple_surface",
+        source_type="roboflow",
+        name="Roboflow Apple Surface Defects",
+        workspace="applesort-esgll",
+        project="apple_surface_defects",
+        fruit_hint="apple",
+        preset="apple",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/applesort-esgll/apple_surface_defects",
+        description="Apple surface defects: healthy, bruising, crack, insect bite, rotten.",
+    ),
+    "rf_apple_fruit_disease": DatasetCatalogEntry(
+        id="rf_apple_fruit_disease",
+        source_type="roboflow",
+        name="Roboflow Apple Fruit Disease Detection",
+        workspace="fruit-disease-detection-nrrei",
+        project="apple-fruit-disease-detection-zei6u",
+        fruit_hint="apple",
+        preset="apple",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/fruit-disease-detection-nrrei/apple-fruit-disease-detection-zei6u",
+        description="Apple fruit disease detection: healthy, blotch, scab, rot.",
+    ),
+    "rf_apple_defect": DatasetCatalogEntry(
+        id="rf_apple_defect",
+        source_type="roboflow",
+        name="Roboflow Apple Defects Yafjq",
+        workspace="appledefectdetection",
+        project="apple-defects-yafjq",
+        fruit_hint="apple",
+        preset="apple",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/appledefectdetection/apple-defects-yafjq",
+        description="Apple defects: healthy, bruise, puncture, blemish, scab, rot.",
+    ),
+    "rf_guava_chisilia": DatasetCatalogEntry(
+        id="rf_guava_chisilia",
+        source_type="roboflow",
+        name="Roboflow Guava Disease Chisilia",
+        workspace="chisilia",
+        project="detection-guava-disease",
+        fruit_hint="guava",
+        preset="guava",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/chisilia/detection-guava-disease",
+        description="Guava disease detection: scab, phytopthora, styler and root rot.",
+    ),
     "rf_guava_wedlv": DatasetCatalogEntry(
         id="rf_guava_wedlv",
         source_type="roboflow",
@@ -154,7 +463,7 @@ DATASET_CATALOG: Dict[str, DatasetCatalogEntry] = {
         preset="guava",
         license="CC BY 4.0",
         url="https://universe.roboflow.com/guava-wedlv/guava-3hezg",
-        description="Guava fruit defect detection: stylar rot, scab, and surface blemishes.",
+        description="Guava fruit defect detection: healthy, canker, fruit spot, disease.",
     ),
     "rf_guava_thao": DatasetCatalogEntry(
         id="rf_guava_thao",
@@ -166,31 +475,7 @@ DATASET_CATALOG: Dict[str, DatasetCatalogEntry] = {
         preset="guava",
         license="CC BY 4.0",
         url="https://universe.roboflow.com/thao-ulmra/guava-qnkee-1uz3i",
-        description="Guava quality grading: fresh vs diseased guava classification.",
-    ),
-    "rf_apple_defect": DatasetCatalogEntry(
-        id="rf_apple_defect",
-        source_type="roboflow",
-        name="Roboflow Apple Defect Detection",
-        workspace="appledefectsdetection",
-        project="apple-defect-detection-pkekm",
-        fruit_hint="apple",
-        preset="apple",
-        license="CC BY 4.0",
-        url="https://universe.roboflow.com/appledefectsdetection/apple-defect-detection-pkekm",
-        description="Apple defects detection: rot, bruising, blemish, and scab lesions.",
-    ),
-    "rf_apple_surface": DatasetCatalogEntry(
-        id="rf_apple_surface",
-        source_type="roboflow",
-        name="Roboflow Apple Surface Defects",
-        workspace="applesort-esgll",
-        project="apple_surface_defects",
-        fruit_hint="apple",
-        preset="apple",
-        license="CC BY 4.0",
-        url="https://universe.roboflow.com/applesort-esgll/apple_surface_defects",
-        description="Apple surface defects: industrial grading anomalies and russet scars.",
+        description="Guava quality grading: fresh ripe, overripe, decaying.",
     ),
     "rf_mango_defect": DatasetCatalogEntry(
         id="rf_mango_defect",
@@ -202,7 +487,7 @@ DATASET_CATALOG: Dict[str, DatasetCatalogEntry] = {
         preset="mango",
         license="CC BY 4.0",
         url="https://universe.roboflow.com/kaycee-kaye-y-villanueva-mzmks/mango-defect-detection",
-        description="Mango defect detection: anthracnose decay, black spots, and weevil bites.",
+        description="Mango defect detection: black spot, brown spot, mango scab.",
     ),
     "rf_mango_grading": DatasetCatalogEntry(
         id="rf_mango_grading",
@@ -214,7 +499,19 @@ DATASET_CATALOG: Dict[str, DatasetCatalogEntry] = {
         preset="mango",
         license="CC BY 4.0",
         url="https://universe.roboflow.com/mangoclass/mangograding",
-        description="Mango quality grading: fresh commercial grades vs defective mangoes.",
+        description="Mango quality grading: Grade A, Grade B, Grade C.",
+    ),
+    "rf_orange_capstone": DatasetCatalogEntry(
+        id="rf_orange_capstone",
+        source_type="roboflow",
+        name="Roboflow Orange Disease Capstone",
+        workspace="capstone-2az9h",
+        project="orange-disease-detection-qunki",
+        fruit_hint="orange",
+        preset="orange",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/capstone-2az9h/orange-disease-detection-qunki",
+        description="Orange disease detection: Fresh, Canker, Blackspot.",
     ),
     "rf_orange_defect": DatasetCatalogEntry(
         id="rf_orange_defect",
@@ -226,7 +523,43 @@ DATASET_CATALOG: Dict[str, DatasetCatalogEntry] = {
         preset="orange",
         license="CC BY 4.0",
         url="https://universe.roboflow.com/mydetect-o2wvw/orange-defect",
-        description="Orange peel defects: green mold, citrus canker, and peel scuffing.",
+        description="Orange peel defects: Fresh, Defect.",
+    ),
+    "rf_orange_disease": DatasetCatalogEntry(
+        id="rf_orange_disease",
+        source_type="roboflow",
+        name="Roboflow Orange Disease 2twml",
+        workspace="orangedisease",
+        project="orange-disease-2twml",
+        fruit_hint="orange",
+        preset="orange",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/orangedisease/orange-disease-2twml",
+        description="Orange disease: fresh, citrus canker, black spot.",
+    ),
+    "rf_pomegranate_diseases": DatasetCatalogEntry(
+        id="rf_pomegranate_diseases",
+        source_type="roboflow",
+        name="Roboflow Pomegranate Disease Detection",
+        workspace="pomegranate-diseases",
+        project="pomegranate-disease-detection-t7rg0",
+        fruit_hint="pomegranate",
+        preset="pomegranate",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/pomegranate-diseases/pomegranate-disease-detection-t7rg0",
+        description="Pomegranate disease detection: Bacterial Blight, Heart Rot, Fruit Spot.",
+    ),
+    "rf_pomegranate_gq": DatasetCatalogEntry(
+        id="rf_pomegranate_gq",
+        source_type="roboflow",
+        name="Roboflow Pomegranate GQ",
+        workspace="orin-f84rr",
+        project="pomegranate-gqopm",
+        fruit_hint="pomegranate",
+        preset="pomegranate",
+        license="CC BY 4.0",
+        url="https://universe.roboflow.com/orin-f84rr/pomegranate-gqopm",
+        description="Pomegranate quality: Grade-1, Grade-2, Grade-3.",
     ),
     "rf_orange_inspection": DatasetCatalogEntry(
         id="rf_orange_inspection",
@@ -239,18 +572,6 @@ DATASET_CATALOG: Dict[str, DatasetCatalogEntry] = {
         license="CC BY 4.0",
         url="https://universe.roboflow.com/marcel-craig/orange-inspection",
         description="Orange surface inspection: quality grading and blemish detection.",
-    ),
-    "rf_pomegranate_gq": DatasetCatalogEntry(
-        id="rf_pomegranate_gq",
-        source_type="roboflow",
-        name="Roboflow Pomegranate GQ",
-        workspace="orin-f84rr",
-        project="pomegranate-gqopm",
-        fruit_hint="pomegranate",
-        preset="pomegranate",
-        license="CC BY 4.0",
-        url="https://universe.roboflow.com/orin-f84rr/pomegranate-gqopm",
-        description="Pomegranate quality: bacterial blight, fruit rot, and borer holes.",
     ),
     "rf_pomegranate_rj": DatasetCatalogEntry(
         id="rf_pomegranate_rj",
@@ -489,12 +810,34 @@ class LabelMapper:
         self,
         custom_map: Optional[Dict[str, str]] = None,
         class_to_id: Optional[Dict[str, int]] = None,
+        mode: str = "compound",
+        target_classes: Optional[List[str]] = None,
     ):
         self.custom_map: Dict[str, str] = custom_map or {}
-        self.class_to_id: Dict[str, int] = class_to_id or CLASS_TO_ID
+        self.mode = mode
+
+        if target_classes is not None:
+            self.target_classes = list(target_classes)
+        elif mode == "unified":
+            self.target_classes = list(UNIFIED_CLASSES)
+        else:
+            self.target_classes = list(ALL_COMPOUND_CLASSES)
+
+        if class_to_id is not None:
+            self.class_to_id: Dict[str, int] = class_to_id
+        elif mode == "unified":
+            self.class_to_id = UNIFIED_CLASS_TO_ID
+        else:
+            self.class_to_id = {name: i for i, name in enumerate(self.target_classes)}
 
     @classmethod
-    def from_file(cls, path: Path, class_to_id: Optional[Dict[str, int]] = None) -> "LabelMapper":
+    def from_file(
+        cls,
+        path: Path,
+        class_to_id: Optional[Dict[str, int]] = None,
+        mode: str = "compound",
+        target_classes: Optional[List[str]] = None,
+    ) -> "LabelMapper":
         """Load custom mapping from JSON or YAML file."""
         if not path.is_file():
             raise FileNotFoundError(f"Label map file not found: {path}")
@@ -504,76 +847,184 @@ class LabelMapper:
             else:
                 data = json.load(f)
         return cls(
-            custom_map={str(k).lower().strip(): str(v).lower().strip() for k, v in data.items()},
+            custom_map={str(k).lower().strip(): str(v).strip() for k, v in data.items()},
             class_to_id=class_to_id,
+            mode=mode,
+            target_classes=target_classes,
         )
 
-    def map_label(self, raw_label: str, fruit_hint: Optional[str] = None) -> Optional[int]:
-        """Map raw text label to compound class ID (0..29), or None if unmappable."""
-        cleaned = raw_label.lower().strip().replace("-", "_").replace(" ", "_")
+    def map_label(
+        self,
+        raw_label: str,
+        fruit_hint: Optional[str] = None,
+        project_hint: Optional[str] = None,
+    ) -> Optional[int]:
+        """Map raw text label to class ID (0..3 in unified mode, or 0..29 in compound mode)."""
+        raw_str = str(raw_label).strip()
+        cleaned = raw_str.lower()
+        cleaned_no_punct = cleaned.replace("-", " ").replace("_", " ").strip()
+        cleaned_under = cleaned.replace("-", "_").replace(" ", "_").strip()
+        cleaned_hyphen = cleaned.replace("_", "-").replace(" ", "-").strip()
 
         # 1. Check custom overrides first
-        if cleaned in self.custom_map:
-            target = self.custom_map[cleaned]
-            if target in self.class_to_id:
-                return self.class_to_id[target]
+        for cand in [cleaned, cleaned_under, cleaned_no_punct, cleaned_hyphen]:
+            if cand in self.custom_map:
+                target = self.custom_map[cand]
+                if target in self.class_to_id:
+                    return self.class_to_id[target]
 
-        # 2. Direct exact compound class match
-        if cleaned in self.class_to_id:
-            return self.class_to_id[cleaned]
+        # =====================================================================
+        # UNIFIED 4-CLASS DEFECT MAPPING MODE (Default)
+        # 0: Healthy, 1: Bruise_or_Scratch, 2: Scab_or_Canker, 3: Rot_or_Blight
+        # =====================================================================
+        if self.mode == "unified":
+            # 2. Check Roboflow project-specific mappings if project hint is provided
+            if project_hint:
+                proj_norm = project_hint.lower().strip()
+                matched_proj = None
+                if proj_norm in ROBOFLOW_PROJECT_MAPPINGS:
+                    matched_proj = ROBOFLOW_PROJECT_MAPPINGS[proj_norm]
+                else:
+                    slug = proj_norm.split("/")[-1]
+                    if slug in ROBOFLOW_PROJECT_MAPPINGS:
+                        matched_proj = ROBOFLOW_PROJECT_MAPPINGS[slug]
 
-        # 3. Identify Fruit
-        detected_fruit: Optional[str] = None
-        for fruit_name, syns in self.FRUIT_SYNONYMS.items():
-            for syn in syns:
-                if syn in cleaned:
-                    detected_fruit = fruit_name
+                if matched_proj:
+                    for cand in [cleaned, cleaned_no_punct, cleaned_under, cleaned_hyphen]:
+                        if cand in matched_proj:
+                            target_name = matched_proj[cand]
+                            return UNIFIED_CLASS_TO_ID.get(target_name)
+
+            # 3. Direct match with Unified class names
+            for name, cid in UNIFIED_CLASS_TO_ID.items():
+                if cleaned in [name.lower(), name.lower().replace("_", " "), name.lower().replace("_", "-")]:
+                    return cid
+
+            # 4. Check unified general mapping
+            for cand in [cleaned, cleaned_no_punct, cleaned_under, cleaned_hyphen]:
+                if cand in UNIFIED_GENERAL_MAPPING:
+                    target_name = UNIFIED_GENERAL_MAPPING[cand]
+                    return UNIFIED_CLASS_TO_ID.get(target_name)
+
+            # 5. Check if any project mapping has this specific label
+            for p_dict in ROBOFLOW_PROJECT_MAPPINGS.values():
+                for cand in [cleaned, cleaned_no_punct, cleaned_under, cleaned_hyphen]:
+                    if cand in p_dict:
+                        target_name = p_dict[cand]
+                        return UNIFIED_CLASS_TO_ID.get(target_name)
+
+            # 6. Fallback heuristic keyword / substring search for unified classes:
+            # Rot_or_Blight (3)
+            rot_keywords = [
+                "rot", "decay", "mold", "blight", "phytopthora", "styler",
+                "blackspot", "black spot", "black_spot", "overripe", "defect",
+                "disease", "heart rot", "anthracnose"
+            ]
+            for kw in rot_keywords:
+                if kw in cleaned_no_punct or kw in cleaned_under:
+                    return UNIFIED_CLASS_TO_ID["Rot_or_Blight"]
+
+            # Scab_or_Canker (2)
+            scab_keywords = [
+                "scab", "canker", "blotch", "spot", "russet", "rust",
+                "melanose", "lesion"
+            ]
+            for kw in scab_keywords:
+                if kw in cleaned_no_punct or kw in cleaned_under:
+                    return UNIFIED_CLASS_TO_ID["Scab_or_Canker"]
+
+            # Bruise_or_Scratch (1)
+            bruise_keywords = [
+                "bruise", "scratch", "crack", "puncture", "blemish", "bite",
+                "insect", "bug", "worm", "damage", "injury", "sapburn"
+            ]
+            for kw in bruise_keywords:
+                if kw in cleaned_no_punct or kw in cleaned_under:
+                    return UNIFIED_CLASS_TO_ID["Bruise_or_Scratch"]
+
+            # Healthy (0)
+            healthy_keywords = [
+                "health", "fresh", "clean", "good", "sound", "ripe",
+                "grade a", "grade 1", "grade_a", "grade_1", "grade-a", "grade-1", "object"
+            ]
+            for kw in healthy_keywords:
+                if kw in cleaned_no_punct or kw in cleaned_under:
+                    return UNIFIED_CLASS_TO_ID["Healthy"]
+
+            return None
+
+        # =====================================================================
+        # COMPOUND CLASS MAPPING MODE (Legacy / 20 Compound Classes)
+        # =====================================================================
+        else:
+            if cleaned_under in self.class_to_id:
+                return self.class_to_id[cleaned_under]
+
+            detected_fruit: Optional[str] = None
+            for fruit_name, syns in self.FRUIT_SYNONYMS.items():
+                for syn in syns:
+                    if syn in cleaned_under:
+                        detected_fruit = fruit_name
+                        break
+                if detected_fruit:
                     break
-            if detected_fruit:
-                break
 
-        if not detected_fruit and fruit_hint:
-            hint_clean = fruit_hint.lower().strip()
-            if hint_clean in self.FRUIT_SYNONYMS or hint_clean in SUPPORTED_FRUITS:
-                detected_fruit = hint_clean
+            if not detected_fruit and fruit_hint:
+                hint_clean = fruit_hint.lower().strip()
+                if hint_clean in self.FRUIT_SYNONYMS or hint_clean in SUPPORTED_FRUITS:
+                    detected_fruit = hint_clean
 
-        # 4. Identify Condition
-        detected_condition: Optional[str] = None
-        for cond_name, syns in self.CONDITION_SYNONYMS.items():
-            for syn in syns:
-                if re.search(r"\b" + re.escape(syn) + r"\b", cleaned) or syn in cleaned:
-                    detected_condition = cond_name
+            detected_condition: Optional[str] = None
+            for cond_name, syns in self.CONDITION_SYNONYMS.items():
+                for syn in syns:
+                    if re.search(r"\b" + re.escape(syn) + r"\b", cleaned_under) or syn in cleaned_under:
+                        detected_condition = cond_name
+                        break
+                if detected_condition:
                     break
-            if detected_condition:
-                break
 
-        # 5. Combine Fruit and Condition
-        if detected_fruit and detected_condition:
-            compound = f"{detected_fruit}_{detected_condition}"
-            return self.class_to_id.get(compound)
+            if detected_fruit and detected_condition:
+                compound = f"{detected_fruit}_{detected_condition}"
+                return self.class_to_id.get(compound)
 
-        # Fallback: if only fruit identified, default to fresh
-        if detected_fruit and not detected_condition:
-            return self.class_to_id.get(f"{detected_fruit}_fresh")
+            if detected_fruit and not detected_condition:
+                return self.class_to_id.get(f"{detected_fruit}_fresh")
 
-        return None
+            return None
 
-        return None
-
-    def map_data_yaml(self, data_yaml_path: Path, fruit_hint: Optional[str] = None) -> Dict[int, int]:
-        """Read YOLO data.yaml and map old class indices to target compound class IDs."""
+    def map_data_yaml(
+        self,
+        data_yaml_path: Path,
+        fruit_hint: Optional[str] = None,
+        project_hint: Optional[str] = None,
+    ) -> Dict[int, int]:
+        """Read YOLO data.yaml and map old class indices to target class IDs."""
         if not data_yaml_path.is_file():
             return {}
 
         with open(data_yaml_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
 
+        # Detect project hint from path parts if not passed explicitly
+        detected_proj = project_hint
+        if not detected_proj:
+            for part in list(data_yaml_path.parts)[::-1]:
+                if part in ROBOFLOW_PROJECT_MAPPINGS:
+                    detected_proj = part
+                    break
+            if not detected_proj:
+                full_path_str = str(data_yaml_path)
+                for p_key in ROBOFLOW_PROJECT_MAPPINGS:
+                    if p_key in full_path_str:
+                        detected_proj = p_key
+                        break
+
         names = cfg.get("names", {})
         mapping: Dict[int, int] = {}
 
         if isinstance(names, list):
             for idx, name in enumerate(names):
-                mapped_id = self.map_label(str(name), fruit_hint=fruit_hint)
+                mapped_id = self.map_label(str(name), fruit_hint=fruit_hint, project_hint=detected_proj)
                 if mapped_id is not None:
                     mapping[idx] = mapped_id
         elif isinstance(names, dict):
@@ -582,7 +1033,7 @@ class LabelMapper:
                     idx = int(idx_key)
                 except ValueError:
                     continue
-                mapped_id = self.map_label(str(name), fruit_hint=fruit_hint)
+                mapped_id = self.map_label(str(name), fruit_hint=fruit_hint, project_hint=detected_proj)
                 if mapped_id is not None:
                     mapping[idx] = mapped_id
 
@@ -959,42 +1410,52 @@ class SyntheticDemoGenerator:
         rng: random.Random,
     ) -> None:
         """Render realistic visual defect features corresponding to condition."""
-        if condition == "fresh":
+        if condition in ["fresh", "Healthy"]:
             return  # Clean unblemished skin
 
         dx = cx + rng.randint(-int(radius * 0.35), int(radius * 0.35))
         dy = cy + rng.randint(-int(radius * 0.35), int(radius * 0.35))
 
-        if condition == "rotten":
+        if condition in ["rotten", "Rot_or_Blight"]:
             # Sunken necrotic spot with fungal ring
-            rot_r = int(radius * rng.uniform(0.25, 0.42))
+            rot_r = int(radius * rng.uniform(0.28, 0.45))
             if fruit == "orange":
                 # Penicillium green-white mold
                 cv2.circle(img, (dx, dy), int(rot_r * 1.3), (120, 175, 110), -1)
                 cv2.circle(img, (dx, dy), rot_r, (40, 70, 45), -1)
+            elif fruit == "pomegranate":
+                # Bacterial blight dark lesion
+                cv2.circle(img, (dx, dy), int(rot_r * 1.2), (30, 40, 55), -1)
+                cv2.circle(img, (dx, dy), rot_r, (15, 20, 30), -1)
             else:
                 # Black/brown rot core
                 cv2.circle(img, (dx, dy), int(rot_r * 1.25), (40, 55, 70), -1)
                 cv2.circle(img, (dx, dy), rot_r, (25, 30, 40), -1)
 
-        elif condition == "bruised":
-            # Soft indented brownish discoloration
-            bruise_r = int(radius * rng.uniform(0.30, 0.50))
-            overlay = img.copy()
-            cv2.ellipse(overlay, (dx, dy), (bruise_r, int(bruise_r * 0.75)), rng.randint(0, 180), 0, 360, (28, 65, 95), -1)
-            cv2.addWeighted(overlay, 0.65, img, 0.35, 0, img)
+        elif condition in ["bruised", "Bruise_or_Scratch"]:
+            if condition == "Bruise_or_Scratch" and rng.random() < 0.5:
+                # Scratch / crack / bite
+                scar_len = int(radius * rng.uniform(0.35, 0.60))
+                pt1 = (dx - scar_len // 2, dy - rng.randint(-8, 8))
+                pt2 = (dx + scar_len // 2, dy + rng.randint(-8, 8))
+                cv2.line(img, pt1, pt2, (55, 75, 95), max(2, int(radius * 0.06)))
+                cv2.circle(img, (dx, dy), max(3, int(radius * 0.08)), (40, 85, 115), -1)
+                cv2.circle(img, (dx, dy), max(1, int(radius * 0.04)), (15, 15, 20), -1)
+            else:
+                # Soft indented brownish discoloration
+                bruise_r = int(radius * rng.uniform(0.30, 0.50))
+                overlay = img.copy()
+                cv2.ellipse(overlay, (dx, dy), (bruise_r, int(bruise_r * 0.75)), rng.randint(0, 180), 0, 360, (28, 65, 95), -1)
+                cv2.addWeighted(overlay, 0.65, img, 0.35, 0, img)
 
-        elif condition == "scarred":
-            # Rough corky scab / russet scar
-            scar_len = int(radius * rng.uniform(0.35, 0.65))
-            pt1 = (dx - scar_len // 2, dy - rng.randint(-10, 10))
-            pt2 = (dx + scar_len // 2, dy + rng.randint(-10, 10))
-            cv2.line(img, pt1, pt2, (65, 85, 105), max(3, int(radius * 0.08)))
-            # Jagged russet spots
+        elif condition in ["scarred", "Scab_or_Canker"]:
+            # Rough corky scab / russet scar / canker / fruit spot
+            scab_r = int(radius * rng.uniform(0.22, 0.40))
+            cv2.ellipse(img, (dx, dy), (scab_r, int(scab_r * 0.78)), rng.randint(0, 180), 0, 360, (55, 75, 95), -1)
             for _ in range(6):
-                px = dx + rng.randint(-scar_len // 2, scar_len // 2)
-                py = dy + rng.randint(-8, 8)
-                cv2.circle(img, (px, py), rng.randint(2, 4), (55, 75, 95), -1)
+                px = dx + rng.randint(-scab_r, scab_r)
+                py = dy + rng.randint(-scab_r, scab_r)
+                cv2.circle(img, (px, py), rng.randint(2, 4), (40, 55, 70), -1)
 
         elif condition == "bug_bite":
             # Tiny dark puncture hole with chlorotic halo
@@ -1008,6 +1469,7 @@ class SyntheticDemoGenerator:
         fruit: str,
         condition: str,
         rng: random.Random,
+        class_id: Optional[int] = None,
     ) -> Tuple[np.ndarray, BBox]:
         """Generate a complete single-fruit synthetic conveyor image with YOLO bbox."""
         img = self.create_conveyor_background(rng)
@@ -1026,10 +1488,15 @@ class SyntheticDemoGenerator:
         norm_w = bw / float(self.img_size)
         norm_h = bh / float(self.img_size)
 
-        compound_name = f"{fruit}_{condition}"
-        class_id = CLASS_TO_ID[compound_name]
+        if class_id is not None:
+            assigned_class = class_id
+        elif condition in UNIFIED_CLASSES:
+            assigned_class = UNIFIED_CLASS_TO_ID[condition]
+        else:
+            compound_name = f"{fruit}_{condition}"
+            assigned_class = CLASS_TO_ID.get(compound_name, 0)
 
-        bbox = BBox(class_id, norm_cx, norm_cy, norm_w, norm_h)
+        bbox = BBox(assigned_class, norm_cx, norm_cy, norm_w, norm_h)
         return img, bbox
 
 
@@ -1059,15 +1526,35 @@ def download_zip_url(url: str, output_dir: Path) -> Path:
 
 def download_roboflow(
     project: str,
-    api_key: str,
+    api_key: Optional[str] = None,
     workspace: Optional[str] = None,
     version: int = 1,
     output_dir: Path = DEFAULT_RAW_DIR / "roboflow",
-) -> Path:
-    """Download YOLOv8/YOLO11 formatted dataset from Roboflow Universe."""
-    print(f"\n[+] Connecting to Roboflow Universe for project: {project}...")
+) -> Optional[Path]:
+    """Download YOLO formatted dataset from Roboflow Universe with graceful error handling."""
+    # Support 'workspace/project' input format
+    if "/" in project and not workspace:
+        parts = project.split("/", 1)
+        workspace, project = parts[0], parts[1]
+
+    print(f"\n[+] Connecting to Roboflow Universe for project: {project} (workspace: {workspace or 'default'})...")
     dest_dir = output_dir / project
     dest_dir.mkdir(parents=True, exist_ok=True)
+
+    # Check local cache first
+    existing_images = list(dest_dir.glob("**/*.jpg")) + list(dest_dir.glob("**/*.png"))
+    if existing_images:
+        print(f"[+] Found cached Roboflow dataset ({len(existing_images)} images) at: {dest_dir}")
+        return dest_dir
+
+    if not api_key:
+        print(f"\n[!] WARNING: No Roboflow API key provided for project '{project}'.")
+        print("    Roboflow Universe requires an API key to download private or rate-limited datasets.")
+        print("    Suggestions:")
+        print("    1. Pass your API key via --roboflow-key <KEY> or set the ROBOFLOW_API_KEY environment variable.")
+        print("    2. Or run the offline synthetic demo to verify the pipeline without downloading:")
+        print("       python3 scripts/dataset_pipeline.py --synthetic-demo --output-dir data/unified_demo\n")
+        return None
 
     # 1. Try roboflow Python SDK if installed
     try:
@@ -1085,7 +1572,7 @@ def download_roboflow(
     url = f"https://api.roboflow.com/{workspace or 'roboflow'}/{project}/{version}/yolov8?api_key={api_key}"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Agri_Sorter/1.0"})
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             zip_url = data.get("yolov8", {}).get("zip") or data.get("export", {}).get("link")
             if zip_url:
@@ -1093,10 +1580,13 @@ def download_roboflow(
     except Exception as rest_err:
         print(f"[-] REST API request failed: {rest_err}")
 
-    raise RuntimeError(
-        f"Failed to download Roboflow dataset '{project}'. Verify your API key and project name, "
-        "or pass a direct zip URL via --urls."
-    )
+    print(f"\n[!] WARNING: Failed to download Roboflow dataset '{project}'.")
+    print(f"    Network error or invalid API key / workspace permissions.")
+    print("    Suggestions:")
+    print("    1. Verify your network connection and ROBOFLOW_API_KEY.")
+    print("    2. Or test the pipeline offline using:")
+    print("       python3 scripts/dataset_pipeline.py --synthetic-demo --output-dir data/unified_demo\n")
+    return None
 
 
 def download_kaggle(
@@ -1142,7 +1632,9 @@ class DatasetPipeline:
         label_mapper: Optional[LabelMapper] = None,
         deduplicator: Optional[Deduplicator] = None,
         augmentor: Optional[ConveyorAugmentor] = None,
+        target_classes: Optional[List[str]] = None,
         compound_classes: Optional[List[str]] = None,
+        class_mode: str = "compound",
     ):
         self.output_dir = Path(output_dir)
         self.raw_dir = Path(raw_dir)
@@ -1152,9 +1644,26 @@ class DatasetPipeline:
         self.augment_factor = augment_factor
         self.seed = seed
         self.rng = random.Random(seed)
+        self.class_mode = class_mode
 
-        self.compound_classes: List[str] = list(compound_classes) if compound_classes is not None else list(PRIMARY_COMPOUND_CLASSES)
-        self.label_mapper = label_mapper or LabelMapper()
+        # Determine target classes: prioritize target_classes, then compound_classes, then class_mode
+        if target_classes is not None:
+            self.target_classes = list(target_classes)
+        elif compound_classes is not None:
+            self.target_classes = list(compound_classes)
+        elif class_mode == "unified":
+            self.target_classes = list(UNIFIED_CLASSES)
+        else:
+            self.target_classes = list(PRIMARY_COMPOUND_CLASSES)
+
+        # Backward compatibility alias
+        self.compound_classes = self.target_classes
+        self.is_unified_mode = (self.target_classes == UNIFIED_CLASSES or class_mode == "unified")
+
+        self.label_mapper = label_mapper or LabelMapper(
+            mode=self.class_mode,
+            target_classes=self.target_classes,
+        )
         self.deduplicator = deduplicator or Deduplicator()
         self.augmentor = augmentor or ConveyorAugmentor()
 
@@ -1163,7 +1672,7 @@ class DatasetPipeline:
         source_dirs: Union[List[Path], List[Tuple[Path, Optional[str]]]],
         fruit_hint: Optional[str] = None,
     ) -> List[SampleRecord]:
-        """Scan source directories, parse labels/annotations, and remap to compound classes."""
+        """Scan source directories, parse labels/annotations, and remap to target classes."""
         parsed_samples: List[SampleRecord] = []
         dup_count = 0
         total_scanned = 0
@@ -1180,13 +1689,20 @@ class DatasetPipeline:
                 print(f"[!] Warning: Source directory does not exist: {s_dir}")
                 continue
 
-            print(f"\n[+] Ingesting dataset source: {s_dir} (hint: {effective_hint or 'none'})")
+            # Detect project hint from directory name or parent
+            detected_project = None
+            for p_key in ROBOFLOW_PROJECT_MAPPINGS:
+                if p_key in str(s_dir) or s_dir.name == p_key or (s_dir.parent and s_dir.parent.name == p_key):
+                    detected_project = p_key
+                    break
+
+            print(f"\n[+] Ingesting dataset source: {s_dir} (hint: {effective_hint or 'none'}, project: {detected_project or 'auto'})")
 
             # Check for data.yaml mapping
             yaml_path = s_dir / "data.yaml"
             class_id_map: Dict[int, int] = {}
             if yaml_path.is_file():
-                class_id_map = self.label_mapper.map_data_yaml(yaml_path, fruit_hint=effective_hint)
+                class_id_map = self.label_mapper.map_data_yaml(yaml_path, fruit_hint=effective_hint, project_hint=detected_project)
                 print(f"    Loaded data.yaml with {len(class_id_map)} mapped class IDs: {class_id_map}")
 
             # Find all image files
@@ -1212,7 +1728,7 @@ class DatasetPipeline:
                     continue
 
                 # 2. Parse Bounding Box Annotations
-                bboxes = self._find_and_parse_bboxes(img_path, s_dir, class_id_map, effective_hint, img_bgr)
+                bboxes = self._find_and_parse_bboxes(img_path, s_dir, class_id_map, effective_hint, img_bgr, project_hint=detected_project)
                 if not bboxes:
                     continue
 
@@ -1236,6 +1752,7 @@ class DatasetPipeline:
         class_id_map: Dict[int, int],
         fruit_hint: Optional[str],
         img_bgr: np.ndarray,
+        project_hint: Optional[str] = None,
     ) -> List[BBox]:
         """Find matching YOLO label txt file or auto-extract contour bbox for folder classification."""
         bboxes: List[BBox] = []
@@ -1268,7 +1785,7 @@ class DatasetPipeline:
                         target_id: Optional[int] = None
                         if raw_id in class_id_map:
                             target_id = class_id_map[raw_id]
-                        elif 0 <= raw_id < len(self.compound_classes):
+                        elif 0 <= raw_id < len(self.target_classes):
                             target_id = raw_id
 
                         if target_id is not None:
@@ -1277,7 +1794,7 @@ class DatasetPipeline:
 
         # Case B: Folder-based classification dataset (e.g. Kaggle freshapples/ or rottenbanana/)
         parent_dir_name = img_path.parent.name
-        mapped_cls = self.label_mapper.map_label(parent_dir_name, fruit_hint=fruit_hint)
+        mapped_cls = self.label_mapper.map_label(parent_dir_name, fruit_hint=fruit_hint, project_hint=project_hint)
         if mapped_cls is not None:
             # Auto-extract bounding box via fruit contour
             H, W = img_bgr.shape[:2]
@@ -1373,7 +1890,7 @@ class DatasetPipeline:
             (self.output_dir / "labels" / split_name).mkdir(parents=True, exist_ok=True)
 
         class_distribution: Dict[int, Dict[str, int]] = {
-            i: {"train": 0, "val": 0, "test": 0, "total": 0} for i in range(len(self.compound_classes))
+            i: {"train": 0, "val": 0, "test": 0, "total": 0} for i in range(len(self.target_classes))
         }
 
         for split_name, sample_list in splits.items():
@@ -1416,15 +1933,15 @@ class DatasetPipeline:
                                     class_distribution[bbox.class_id]["train"] += 1
                                     class_distribution[bbox.class_id]["total"] += 1
 
-        # Write data.yaml
+        # Write data.yaml with nc: 4 and names list format
         data_yaml_path = self.output_dir / "data.yaml"
         yaml_content = {
             "path": str(self.output_dir.resolve()),
             "train": "images/train",
             "val": "images/val",
             "test": "images/test",
-            "nc": len(self.compound_classes),
-            "names": {i: name for i, name in enumerate(self.compound_classes)},
+            "nc": len(self.target_classes),
+            "names": list(self.target_classes),
         }
         with open(data_yaml_path, "w", encoding="utf-8") as f:
             yaml.dump(yaml_content, f, sort_keys=False)
@@ -1435,7 +1952,8 @@ class DatasetPipeline:
     def print_distribution_and_warnings(self, dist: Dict[int, Dict[str, int]]) -> List[str]:
         """Print ASCII summary table of class distributions and explicit warnings for low classes."""
         print("\n" + "=" * 90)
-        print("                        AGRI_SORTER MULTI-FRUIT DATASET SUMMARY")
+        mode_label = "UNIFIED 4-CLASS DEFECT" if self.is_unified_mode else "MULTI-FRUIT COMPOUND"
+        print(f"                        AGRI_SORTER {mode_label} DATASET SUMMARY")
         print("=" * 90)
         header = f"{'ID':<3} | {'Class Name':<20} | {'Train':<8} | {'Val':<8} | {'Test':<8} | {'Total':<8} | {'Status':<12}"
         print(header)
@@ -1447,7 +1965,7 @@ class DatasetPipeline:
         total_test = sum(dist[i]["test"] for i in dist if i in dist)
         grand_total = sum(dist[i]["total"] for i in dist if i in dist)
 
-        for i, class_name in enumerate(self.compound_classes):
+        for i, class_name in enumerate(self.target_classes):
             c_tr = dist.get(i, {}).get("train", 0)
             c_va = dist.get(i, {}).get("val", 0)
             c_te = dist.get(i, {}).get("test", 0)
@@ -1462,27 +1980,28 @@ class DatasetPipeline:
             print(f"{i:<3} | {class_name:<20} | {c_tr:<8} | {c_va:<8} | {c_te:<8} | {c_tot:<8} | {status:<12}")
 
         print("-" * 90)
-        print(f"TOTALS | {f'{len(self.compound_classes)} Compound Classes':<20} | {total_train:<8} | {total_val:<8} | {total_test:<8} | {grand_total:<8} |")
+        print(f"TOTALS | {f'{len(self.target_classes)} Classes':<20} | {total_train:<8} | {total_val:<8} | {total_test:<8} | {grand_total:<8} |")
         print("=" * 90)
 
         # Print explicit warnings
         if underrepresented:
             print("\n" + "!" * 90)
-            print(f"⚠️  WARNING: {len(underrepresented)} of {len(self.compound_classes)} class(es) have fewer than {self.min_class_threshold} images:")
+            print(f"⚠️  WARNING: {len(underrepresented)} of {len(self.target_classes)} class(es) have fewer than {self.min_class_threshold} images:")
             for item in underrepresented:
                 print(f"    - {item} < {self.min_class_threshold} threshold")
             print("\nACTION REQUIRED: Acquire additional real-world conveyor footage or use targeted")
             print("synthetic augmentations before production deployment on Hailo-8L / Raspberry Pi 4.")
             print("!" * 90 + "\n")
         else:
-            print(f"\n[+] SUCCESS: All {len(self.compound_classes)} compound classes satisfy the minimum threshold of {self.min_class_threshold} images!\n")
+            print(f"\n[+] SUCCESS: All {len(self.target_classes)} classes satisfy the minimum threshold of {self.min_class_threshold} images!\n")
 
         return underrepresented
 
     def run_synthetic_demo(self, count: int = 100) -> None:
         """Run verified end-to-end synthetic conveyor demo pipeline without requiring API keys."""
+        mode_str = "UNIFIED 4-CLASS DEFECT" if self.is_unified_mode else "MULTI-FRUIT COMPOUND"
         print(f"\n{'='*70}")
-        print(f"🚀 INITIATING AGRI_SORTER SYNTHETIC MULTI-FRUIT DEMO (Count: {count})")
+        print(f"🚀 INITIATING AGRI_SORTER SYNTHETIC DEMO ({mode_str}, Count: {count})")
         print(f"{'='*70}")
 
         demo_raw_dir = self.raw_dir / "synthetic_demo"
@@ -1490,16 +2009,26 @@ class DatasetPipeline:
 
         generator = SyntheticDemoGenerator(img_size=640)
         demo_samples: List[SampleRecord] = []
+        fruits_pool = ["apple", "guava", "orange", "mango", "pomegranate"]
 
-        print(f"[+] Generating {count} synthetic multi-fruit conveyor images...")
+        print(f"[+] Generating {count} synthetic conveyor images across {len(self.target_classes)} classes...")
         for i in range(count):
-            cls_idx = i % len(self.compound_classes)
-            fruit_condition_name = self.compound_classes[cls_idx]
-            fruit, condition = fruit_condition_name.split("_", 1)
+            cls_idx = i % len(self.target_classes)
+            class_name = self.target_classes[cls_idx]
+            fruit = fruits_pool[i % len(fruits_pool)]
 
-            img, bbox = generator.generate_sample(fruit, condition, self.rng)
-            img_path = demo_raw_dir / f"syn_{i:04d}_{fruit}_{condition}.jpg"
-            lbl_path = demo_raw_dir / f"syn_{i:04d}_{fruit}_{condition}.txt"
+            if self.is_unified_mode:
+                img, bbox = generator.generate_sample(fruit, class_name, self.rng, class_id=cls_idx)
+                file_stem = f"syn_{i:04d}_{fruit}_{class_name}"
+            else:
+                parts = class_name.split("_", 1)
+                f_name = parts[0] if parts[0] in fruits_pool else fruit
+                cond_name = parts[1] if len(parts) > 1 else "fresh"
+                img, bbox = generator.generate_sample(f_name, cond_name, self.rng, class_id=cls_idx)
+                file_stem = f"syn_{i:04d}_{f_name}_{cond_name}"
+
+            img_path = demo_raw_dir / f"{file_stem}.jpg"
+            lbl_path = demo_raw_dir / f"{file_stem}.txt"
 
             cv2.imwrite(str(img_path), img)
             with open(lbl_path, "w", encoding="utf-8") as lf:
@@ -1517,7 +2046,7 @@ class DatasetPipeline:
                 primary_class=bbox.class_id,
             ))
 
-        print(f"[+] Successfully generated {len(demo_samples)} synthetic multi-fruit samples.")
+        print(f"[+] Successfully generated {len(demo_samples)} synthetic samples.")
 
         # Split 80/10/10
         train, val, test = self.split_strictly_stratified(demo_samples)
@@ -1553,6 +2082,13 @@ def build_cli_parser() -> argparse.ArgumentParser:
         type=int,
         default=100,
         help="Number of synthetic images to generate in --synthetic-demo mode",
+    )
+    group_mode.add_argument(
+        "--class-mode",
+        type=str,
+        choices=["unified", "compound"],
+        default="unified",
+        help="Class system: 'unified' (4 defect classes) or 'compound' (20 fruit_condition classes)",
     )
 
     group_paths = parser.add_argument_group("Paths & Output")
@@ -1599,7 +2135,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
         "--roboflow-project",
         type=str,
         default=None,
-        help="Roboflow Universe project slug (e.g. apple-defects-yafjq)",
+        help="Roboflow Universe project slug or 'workspace/project' (e.g. apple_surface_defects)",
     )
     group_download.add_argument(
         "--roboflow-workspace",
@@ -1640,7 +2176,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
         "--min-class-threshold",
         type=int,
         default=DEFAULT_MIN_CLASS_THRESHOLD,
-        help="Minimum required images per compound class before raising an explicit warning",
+        help="Minimum required images per class before raising an explicit warning",
     )
     group_aug.add_argument(
         "--split-ratio",
@@ -1689,14 +2225,20 @@ def main() -> None:
     if not math.isclose(r_sum, 1.0, rel_tol=1e-3):
         parser.error(f"Split ratios must sum to 1.0, got: {args.split_ratio} (sum = {r_sum:.3f})")
 
-    # Determine target compound classes based on preset or fruit hints
-    if args.dataset_preset in ["all", "guava", "pomegranate"] or args.fruit_hint in ["guava", "pomegranate"]:
+    # Determine target classes based on class_mode
+    if args.class_mode == "unified":
+        target_classes = UNIFIED_CLASSES
+    elif args.dataset_preset in ["all", "guava", "pomegranate"] or args.fruit_hint in ["guava", "pomegranate"]:
         target_classes = ALL_COMPOUND_CLASSES
     else:
         target_classes = PRIMARY_COMPOUND_CLASSES
 
     # Load custom label mapper if provided
-    label_mapper = LabelMapper.from_file(args.label_map) if args.label_map else LabelMapper()
+    label_mapper = (
+        LabelMapper.from_file(args.label_map, mode=args.class_mode, target_classes=target_classes)
+        if args.label_map
+        else LabelMapper(mode=args.class_mode, target_classes=target_classes)
+    )
 
     # Initialize Pipeline
     pipeline = DatasetPipeline(
@@ -1708,7 +2250,8 @@ def main() -> None:
         augment_factor=args.augment_factor,
         seed=args.seed,
         label_mapper=label_mapper,
-        compound_classes=target_classes,
+        target_classes=target_classes,
+        class_mode=args.class_mode,
     )
 
     # 2. Synthetic Demo Mode
@@ -1744,7 +2287,8 @@ def main() -> None:
                             workspace=entry.workspace,
                             output_dir=args.raw_dir / "roboflow",
                         )
-                        active_sources.append((rf_path, entry.fruit_hint))
+                        if rf_path:
+                            active_sources.append((rf_path, entry.fruit_hint))
                     except Exception as e:
                         print(f"    [!] Failed to download Roboflow dataset '{entry.id}': {e}")
                 else:
@@ -1765,15 +2309,16 @@ def main() -> None:
 
     # Explicit Roboflow Project flag
     if args.roboflow_project:
-        if not args.roboflow_key:
-            parser.error("--roboflow-key (or ROBOFLOW_API_KEY environment variable) is required for Roboflow download.")
         rf_path = download_roboflow(
             project=args.roboflow_project,
             api_key=args.roboflow_key,
             workspace=args.roboflow_workspace,
             output_dir=args.raw_dir / "roboflow",
         )
-        active_sources.append(rf_path)
+        if rf_path:
+            active_sources.append(rf_path)
+        else:
+            print(f"[!] Warning: Roboflow download skipped or failed for '{args.roboflow_project}'.")
 
     # Download from direct URLs
     for idx, url in enumerate(args.urls):
@@ -1789,11 +2334,11 @@ def main() -> None:
     if not active_sources:
         print("\n[-] No input dataset sources specified or available locally.")
         print("    Options:")
-        print("    1. Use --list-sources to see all 18 registered catalog datasets")
-        print("    2. Use --dataset-preset [all|apple|guava|orange|mango|pomegranate]")
-        print("    3. Use --synthetic-demo to test the pipeline locally with synthetic multi-fruit data")
-        print("    4. Ingest local directories via --source-dirs <path>")
-        print("\nRun with --help for all available options.\n")
+        print("    1. Run offline synthetic verification demo:")
+        print("       python3 scripts/dataset_pipeline.py --synthetic-demo --output-dir data/unified_demo")
+        print("    2. Use --list-sources to see all 13 Roboflow & 8 Kaggle catalog datasets")
+        print("    3. Provide your Roboflow API key via --roboflow-key <KEY>")
+        print("    4. Ingest local directories via --source-dirs <path>\n")
         sys.exit(1)
 
     # Ingest, Parse, Deduplicate

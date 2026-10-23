@@ -258,3 +258,117 @@ def test_dashboard_api_set_fruit():
     assert "fruit_counts" in status_resp
     assert status_resp["fruit_counts"]["guava"] == 3
     assert status_resp["fruit_counts"]["pomegranate"] == 2
+
+
+def test_unified_defect_hierarchy_helpers():
+    """Verify map_to_defect_hierarchy and classify_defect_hierarchy mapping rules."""
+    from app.web_dashboard import classify_defect_hierarchy, map_to_defect_hierarchy
+
+    # Healthy
+    assert map_to_defect_hierarchy("fresh") == "Healthy"
+    assert map_to_defect_hierarchy("healthy") == "Healthy"
+    assert map_to_defect_hierarchy("apple_fresh") == "Healthy"
+    assert map_to_defect_hierarchy("good") == "Healthy"
+
+    # Bruise_or_Scratch
+    assert map_to_defect_hierarchy("bruised") == "Bruise_or_Scratch"
+    assert map_to_defect_hierarchy("scratch") == "Bruise_or_Scratch"
+    assert map_to_defect_hierarchy("guava_bruised") == "Bruise_or_Scratch"
+    assert map_to_defect_hierarchy("Bruise_or_Scratch") == "Bruise_or_Scratch"
+
+    # Scab_or_Canker
+    assert map_to_defect_hierarchy("scarred") == "Scab_or_Canker"
+    assert map_to_defect_hierarchy("bug_bite") == "Scab_or_Canker"
+    assert map_to_defect_hierarchy("scab") == "Scab_or_Canker"
+    assert map_to_defect_hierarchy("canker") == "Scab_or_Canker"
+    assert map_to_defect_hierarchy("orange_scarred") == "Scab_or_Canker"
+
+    # Rot_or_Blight
+    assert map_to_defect_hierarchy("rotten") == "Rot_or_Blight"
+    assert map_to_defect_hierarchy("blight") == "Rot_or_Blight"
+    assert map_to_defect_hierarchy("decay") == "Rot_or_Blight"
+    assert map_to_defect_hierarchy("apple_rotten") == "Rot_or_Blight"
+
+    # Hierarchy ranking priority: Rot > Scab > Bruise > Healthy
+    assert classify_defect_hierarchy(["fresh"]) == "Healthy"
+    assert classify_defect_hierarchy(["fresh", "bruised"]) == "Bruise_or_Scratch"
+    assert classify_defect_hierarchy(["bruised", "scab"]) == "Scab_or_Canker"
+    assert classify_defect_hierarchy(["bruised", "scab", "rotten"]) == "Rot_or_Blight"
+    assert classify_defect_hierarchy([], is_reject=True) == "Rot_or_Blight"
+
+
+def test_html_defect_hierarchy_elements():
+    """Verify HTML contains all 4 defect badges, pills, and servo gauge displays."""
+    # Defect breakdown pills
+    assert 'id="cntHealthy"' in HTML_PAGE
+    assert 'id="cntBruise"' in HTML_PAGE
+    assert 'id="cntScab"' in HTML_PAGE
+    assert 'id="cntRot"' in HTML_PAGE
+
+    # Defect cards in right telemetry panel
+    assert 'id="cardHealthy"' in HTML_PAGE
+    assert 'id="cardBruise"' in HTML_PAGE
+    assert 'id="cardScab"' in HTML_PAGE
+    assert 'id="cardRot"' in HTML_PAGE
+
+    # Servo display and gauge
+    assert 'id="servoAngleDisplay"' in HTML_PAGE
+    assert 'id="servoFlapVisual"' in HTML_PAGE
+    assert '0° [PASS]' in HTML_PAGE
+
+    # Defect hierarchy CSS classes
+    assert '.defect-pill.healthy' in HTML_PAGE
+    assert '.defect-pill.bruise' in HTML_PAGE
+    assert '.defect-pill.scab' in HTML_PAGE
+    assert '.defect-pill.rot' in HTML_PAGE
+
+
+@patch("app.web_dashboard.FruitDetector")
+@patch("app.web_dashboard.FruitTracker")
+@patch("app.web_dashboard.create_hardware_coordinator_from_config")
+@patch("cv2.VideoCapture")
+def test_process_test_photo_all_4_defect_classes(mock_cap, mock_coord, mock_tracker, mock_detector):
+    """Verify process_test_photo correctly identifies and sets servo angle for all 4 defect classes."""
+    mock_detector.return_value.detect.return_value = []
+    mock_cap.return_value.isOpened.return_value = False
+    hub = SorterHub()
+    hub.running = False
+
+    test_img = np.full((300, 300, 3), 110, dtype=np.uint8)
+    _, enc_img = cv2.imencode(".jpg", test_img)
+    img_bytes = enc_img.tobytes()
+
+    # 1. Healthy -> 0° PASS
+    ev_healthy = hub.process_test_photo(img_bytes, filename="apple_fresh_sample.jpg")
+    assert ev_healthy["defect_category"] == "Healthy"
+    assert ev_healthy["status"] == "FRESH"
+    assert ev_healthy["servo_angle"] == "0°"
+    assert "PASS" in ev_healthy["servo_action"]
+
+    # 2. Bruise_or_Scratch -> 90° EJECT
+    ev_bruise = hub.process_test_photo(img_bytes, filename="apple_bruised_sample.jpg")
+    assert ev_bruise["defect_category"] == "Bruise_or_Scratch"
+    assert ev_bruise["status"] == "REJECT"
+    assert ev_bruise["servo_angle"] == "90°"
+    assert "EJECT" in ev_bruise["servo_action"]
+
+    # 3. Scab_or_Canker -> 90° EJECT
+    ev_scab = hub.process_test_photo(img_bytes, filename="orange_scab_sample.jpg")
+    assert ev_scab["defect_category"] == "Scab_or_Canker"
+    assert ev_scab["status"] == "REJECT"
+    assert ev_scab["servo_angle"] == "90°"
+    assert "EJECT" in ev_scab["servo_action"]
+
+    # 4. Rot_or_Blight -> 90° EJECT
+    ev_rot = hub.process_test_photo(img_bytes, filename="guava_rotten_sample.jpg")
+    assert ev_rot["defect_category"] == "Rot_or_Blight"
+    assert ev_rot["status"] == "REJECT"
+    assert ev_rot["servo_angle"] == "90°"
+    assert "EJECT" in ev_rot["servo_action"]
+
+    # Verify cumulative defect counters
+    assert hub.defect_counts["Healthy"] >= 1
+    assert hub.defect_counts["Bruise_or_Scratch"] >= 1
+    assert hub.defect_counts["Scab_or_Canker"] >= 1
+    assert hub.defect_counts["Rot_or_Blight"] >= 1
+

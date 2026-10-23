@@ -78,6 +78,109 @@ COCO_FRUIT_IDS = {
     COCO_ORANGE_CLASS_ID: "orange",
 }
 
+# ============================================================================
+# Stage 2 Unified 4-Class Defect Classification
+# Class 0: 'Healthy'           -> is_defect = False -> PASS (Servo 0°)
+# Class 1: 'Bruise_or_Scratch' -> is_defect = True  -> REJECT (Servo 90°)
+# Class 2: 'Scab_or_Canker'    -> is_defect = True  -> REJECT (Servo 90°)
+# Class 3: 'Rot_or_Blight'     -> is_defect = True  -> REJECT (Servo 90°)
+# ============================================================================
+STAGE2_CLASSES = [
+    "Healthy",
+    "Bruise_or_Scratch",
+    "Scab_or_Canker",
+    "Rot_or_Blight",
+]
+
+STAGE2_CLASS_MAP = {
+    0: "Healthy",
+    1: "Bruise_or_Scratch",
+    2: "Scab_or_Canker",
+    3: "Rot_or_Blight",
+}
+
+STAGE2_SERVO_MAP = {
+    "Healthy": 0,             # PASS (Servo 0°)
+    "Bruise_or_Scratch": 90,  # REJECT (Servo 90°)
+    "Scab_or_Canker": 90,     # REJECT (Servo 90°)
+    "Rot_or_Blight": 90,      # REJECT (Servo 90°)
+}
+
+STAGE2_COLOR_CODING = {
+    "Healthy": (0, 220, 0),             # Green
+    "Bruise_or_Scratch": (0, 220, 255), # Yellow
+    "Scab_or_Canker": (0, 140, 255),    # Orange
+    "Rot_or_Blight": (0, 0, 220),       # Red
+}
+
+
+class DefectCondition(str):
+    """Calibrated Stage 2 Defect Condition with unified 4-class and legacy compatibility.
+
+    Maps to:
+      - Class 0: 'Healthy' (is_defect = False, Servo 0°, Color: Green)
+      - Class 1: 'Bruise_or_Scratch' (is_defect = True, Servo 90°, Color: Yellow)
+      - Class 2: 'Scab_or_Canker' (is_defect = True, Servo 90°, Color: Orange)
+      - Class 3: 'Rot_or_Blight' (is_defect = True, Servo 90°, Color: Red)
+    """
+
+    def __new__(cls, legacy_name: str, unified_name: str, class_id: int):
+        obj = super().__new__(cls, legacy_name)
+        obj.legacy_name = legacy_name
+        obj.unified_name = unified_name
+        obj.class_id = class_id
+        obj.servo_angle = 0 if class_id == 0 else 90
+        obj.is_defect = class_id != 0
+        obj.color_bgr = STAGE2_COLOR_CODING.get(unified_name, (0, 220, 0))
+        return obj
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, str):
+            other_clean = other.strip()
+            return (
+                str(self).lower() == other_clean.lower()
+                or self.unified_name.lower() == other_clean.lower()
+                or self.legacy_name.lower() == other_clean.lower()
+            )
+        return super().__eq__(other)
+
+    def __hash__(self) -> int:
+        return hash(str(self))
+
+
+def make_defect_condition(name: str) -> DefectCondition:
+    """Instantiate calibrated DefectCondition for unified 4-class Stage 2 sorting."""
+    n = name.strip().lower()
+    if n in ["healthy", "fresh"]:
+        return DefectCondition("fresh", "Healthy", 0)
+    elif n in ["bruised", "scarred", "scratch", "bruise_or_scratch", "russetting"]:
+        legacy = "scarred" if "scar" in n else "bruised"
+        return DefectCondition(legacy, "Bruise_or_Scratch", 1)
+    elif n in ["bug_bite", "scab", "canker", "scab_or_canker", "insect_bite"]:
+        return DefectCondition("bug_bite" if "bite" in n else "scab_or_canker", "Scab_or_Canker", 2)
+    elif n in ["rotten", "blight", "rot_or_blight", "decay"]:
+        return DefectCondition("rotten", "Rot_or_Blight", 3)
+    return DefectCondition(name, "Bruise_or_Scratch", 1)
+
+
+def get_defect_color(condition: Any) -> Tuple[int, int, int]:
+    """Return BGR color coding for Stage 2 defect classes:
+      - Healthy: Green (0, 220, 0)
+      - Bruise_or_Scratch: Yellow (0, 220, 255)
+      - Scab_or_Canker: Orange (0, 140, 255)
+      - Rot_or_Blight: Red (0, 0, 220)
+    """
+    cond_str = str(condition).strip().lower()
+    if cond_str in ["healthy", "fresh"]:
+        return STAGE2_COLOR_CODING["Healthy"]
+    elif cond_str in ["bruise_or_scratch", "bruised", "scarred", "scratch", "russetting"]:
+        return STAGE2_COLOR_CODING["Bruise_or_Scratch"]
+    elif cond_str in ["scab_or_canker", "scab", "canker", "bug_bite", "insect_bite"]:
+        return STAGE2_COLOR_CODING["Scab_or_Canker"]
+    elif cond_str in ["rot_or_blight", "rotten", "blight", "decay"]:
+        return STAGE2_COLOR_CODING["Rot_or_Blight"]
+    return STAGE2_COLOR_CODING["Healthy"]
+
 
 class BaseInferenceBackend:
     """Abstract interface for detection backends."""
@@ -471,8 +574,8 @@ class FruitDetector:
     def validate_geometry(box: Tuple[int, int, int, int]) -> bool:
         """Validate bounding box against fruit size and geometry constraints.
 
-        Rejects sub-60x60 boxes, area < 3600px², and extreme aspect ratios
-        (eliminates human eyes, pupils, moles, buttons, background noise).
+        Rejects sub-60x60 boxes, area < 3600px², extreme aspect ratios,
+        and full-frame background canvases (> 75% of frame).
         """
         x1, y1, x2, y2 = box
         w = x2 - x1
@@ -480,6 +583,11 @@ class FruitDetector:
         if w < MIN_FRUIT_WIDTH or h < MIN_FRUIT_HEIGHT:
             return False
         if (w * h) < MIN_FRUIT_AREA:
+            return False
+        # Reject full-frame background canvas fills
+        if w >= 580 and h >= 440:
+            return False
+        if (w * h) > 230400:  # 640 * 480 * 0.75
             return False
         aspect = float(max(w, h)) / float(max(min(w, h), 1))
         if aspect > MAX_ASPECT_RATIO:
@@ -520,30 +628,52 @@ class FruitDetector:
 
     @staticmethod
     def is_skin_tone_dominant(crop: np.ndarray, fruit_type: Optional[str] = None) -> bool:
-        """Detect human skin chromaticity (YCrCb + HSV) to reject hands, arms, and faces."""
+        """Detect human skin chromaticity (YCrCb + HSV) to reject hands, arms, and faces.
+
+        Guards:
+          - Orange Fruit Exemption: If pixel crop exhibits strong orange chromatic signature
+            (H in [5, 25], S >= 80, V >= 90) for an orange candidate, it is recognized as genuine
+            orange fruit peel and NOT suppressed as human skin tone.
+        """
         if crop is None or crop.size == 0:
             return False
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
         ycrcb = cv2.cvtColor(crop, cv2.COLOR_BGR2YCrCb)
 
-        cr = ycrcb[:, :, 1]
-        cb = ycrcb[:, :, 2]
-        skin_ycrcb = (cr >= 133) & (cr <= 173) & (cb >= 77) & (cb <= 127)
-
         h = hsv[:, :, 0]
         s = hsv[:, :, 1]
         v = hsv[:, :, 2]
+        cr = ycrcb[:, :, 1]
+        cb = ycrcb[:, :, 2]
+
+        total_pixels = float(crop.shape[0] * crop.shape[1])
+
+        # Strong orange chromatic signature: H in [5, 25], S >= 80, V >= 90
+        orange_sig = (h >= 5) & (h <= 25) & (s >= 80) & (v >= 90)
+        orange_ratio = np.count_nonzero(orange_sig) / max(total_pixels, 1.0)
+
+        # If evaluating an orange candidate and orange pigment is present, do not suppress as skin
+        if fruit_type == "orange" and orange_ratio >= 0.20:
+            return False
+
+        # If solid orange fruit is tested without fruit_type (e.g. S >= 140 or carotenoid low-blue B < 80)
+        b_channel = crop[:, :, 0]
+        solid_orange = orange_sig & ((s >= 140) | (cb <= 85) | (cr >= 174) | (b_channel < 80))
+        if np.count_nonzero(solid_orange) / max(total_pixels, 1.0) >= 0.25:
+            return False
+
+        skin_ycrcb = (cr >= 133) & (cr <= 173) & (cb >= 77) & (cb <= 127)
         skin_hsv = ((h <= 25) | (h >= 165)) & (s >= 25) & (s <= 150) & (v >= 50) & (v <= 250)
 
         skin_mask = skin_ycrcb & skin_hsv
-        total_pixels = float(crop.shape[0] * crop.shape[1])
         skin_ratio = np.count_nonzero(skin_mask) / max(total_pixels, 1.0)
 
         # Distinguish high-saturation fruit pigments (oranges, red apples, green fruits, ruby pomegranates)
         fruit_pigment = np.count_nonzero(
             (s >= 160)
-            | ((h >= 25) & (h <= 85) & (s >= 40))
-            | (((h <= 12) | (h >= 168)) & (s >= 140))
+            | ((h >= 25) & (h <= 88) & (s >= 35))
+            | (((h <= 15) | (h >= 160)) & (s >= 115))
+            | solid_orange
         ) / max(total_pixels, 1.0)
 
         # If skin tone dominates and high-saturation fruit pigmentation is lacking, reject as skin
@@ -681,18 +811,18 @@ class FruitDetector:
         """Detect guavas via spherical/globose geometry & green/yellowish-green chromatic profile.
 
         Criteria:
-          - Guava is spherical/globose (sub-spherical).
-          - Circularity C >= 0.70 (4 * pi * Area / Perimeter^2).
-          - Aspect ratio max(w,h)/min(w,h) in [0.80, 1.35].
+          - Guava is spherical/globose or oval (hand-held or tilted angles).
+          - Circularity C >= 0.38 (4 * pi * Area / Perimeter^2).
+          - Aspect ratio max(w,h)/min(w,h) <= 1.85.
           - Min size: w >= 60 px, h >= 60 px, Area >= 3600 px^2.
-          - HSV chromatic profile: Green to Yellowish-Green (H in [25, 85], S in [35, 255], V in [45, 255]).
+          - HSV chromatic profile: Green to Yellowish-Green (H in [28, 88], S in [35, 255], V in [35, 255]).
         """
         candidates: List[Tuple[str, float, Tuple[int, int, int, int]]] = []
         orig_h, orig_w = frame.shape[:2]
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        # HSV chromatic profile: Green to Yellowish-Green
-        guava_mask = cv2.inRange(hsv, (25, 35, 45), (85, 255, 255))
+        # HSV chromatic profile: Green to Yellowish-Green (H in [25, 88], S >= 35, V >= 35)
+        guava_mask = cv2.inRange(hsv, (25, 35, 35), (88, 255, 255))
 
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
         clean_mask = cv2.morphologyEx(guava_mask, cv2.MORPH_CLOSE, kernel)
@@ -712,38 +842,40 @@ class FruitDetector:
             if perimeter <= 0:
                 continue
 
-            # Circularity C = 4 * pi * Area / Perimeter^2
+            # Circularity C = 4 * pi * Area / Perimeter^2 (relaxed to 0.38 for hand-held / oval guavas)
             circularity = float(4.0 * np.pi * area) / float(perimeter * perimeter)
             aspect = float(max(w, h)) / float(max(min(w, h), 1))
             hw_ratio = float(w) / float(max(h, 1))
 
-            if circularity >= 0.70 and 0.80 <= hw_ratio <= 1.35 and aspect <= 1.35:
-                conf = round(min(0.96, 0.72 + min(circularity, 1.0) * 0.22), 3)
+            if circularity >= 0.38 and 0.50 <= hw_ratio <= 1.95 and aspect <= 1.85:
+                conf = round(min(0.96, 0.70 + min(circularity, 1.0) * 0.25), 3)
                 box = (x, y, min(orig_w, x + w), min(orig_h, y + h))
                 candidates.append(("guava", conf, box))
 
         return candidates
 
+    _detect_guava_globose = _detect_guava_candidates
+
     def _detect_pomegranate_candidates(
         self, frame: np.ndarray
     ) -> List[Tuple[str, float, Tuple[int, int, int, int]]]:
-        """Detect pomegranates via globose calyx geometry & red/deep-red/ruby-pink HSV profile.
+        """Detect pomegranates via globose calyx geometry & red/ruby HSV profile.
 
         Criteria:
-          - Pomegranate is globose with calyx/crown.
-          - Circularity C >= 0.70 (4 * pi * Area / Perimeter^2).
-          - Aspect ratio max(w,h)/min(w,h) in [0.80, 1.35].
+          - Pomegranate is globose with calyx/crown (uneven hand-held angles).
+          - Circularity C >= 0.40 (4 * pi * Area / Perimeter^2).
+          - Aspect ratio max(w,h)/min(w,h) <= 1.85.
           - Min size: w >= 60 px, h >= 60 px, Area >= 3600 px^2.
-          - HSV chromatic profile: Red/deep-red/ruby-pink (H in [0, 15] U [165, 180] or deep reddish-brown).
+          - HSV chromatic profile: Red/deep-red/ruby (H in [0, 15] U [160, 180] or deep reddish-brown).
         """
         candidates: List[Tuple[str, float, Tuple[int, int, int, int]]] = []
         orig_h, orig_w = frame.shape[:2]
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        # Red / deep-red / ruby-pink HSV profile
-        red_lower = cv2.inRange(hsv, (0, 40, 35), (15, 255, 255))
-        red_upper = cv2.inRange(hsv, (165, 40, 35), (180, 255, 255))
-        brown_rind = cv2.inRange(hsv, (0, 45, 30), (18, 255, 180))
+        # Red / deep-red / ruby HSV profile (H in [0, 15] or [160, 180], min S=35)
+        red_lower = cv2.inRange(hsv, (0, 35, 30), (15, 255, 255))
+        red_upper = cv2.inRange(hsv, (160, 35, 30), (180, 255, 255))
+        brown_rind = cv2.inRange(hsv, (0, 40, 25), (18, 255, 180))
         pom_mask = cv2.bitwise_or(cv2.bitwise_or(red_lower, red_upper), brown_rind)
 
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
@@ -764,17 +896,19 @@ class FruitDetector:
             if perimeter <= 0:
                 continue
 
-            # Circularity C = 4 * pi * Area / Perimeter^2
+            # Circularity C = 4 * pi * Area / Perimeter^2 (relaxed to 0.40 for calyx crown / hand-held angles)
             circularity = float(4.0 * np.pi * area) / float(perimeter * perimeter)
             aspect = float(max(w, h)) / float(max(min(w, h), 1))
             hw_ratio = float(w) / float(max(h, 1))
 
-            if circularity >= 0.70 and 0.80 <= hw_ratio <= 1.35 and aspect <= 1.35:
-                conf = round(min(0.96, 0.72 + min(circularity, 1.0) * 0.22), 3)
+            if circularity >= 0.40 and 0.50 <= hw_ratio <= 1.95 and aspect <= 1.85:
+                conf = round(min(0.96, 0.70 + min(circularity, 1.0) * 0.25), 3)
                 box = (x, y, min(orig_w, x + w), min(orig_h, y + h))
                 candidates.append(("pomegranate", conf, box))
 
         return candidates
+
+    _detect_pomegranate_calyx = _detect_pomegranate_candidates
 
     def _detect_mango_candidates(
         self, frame: np.ndarray
@@ -829,16 +963,17 @@ class FruitDetector:
 
         # Orange
         if target in ["all", "orange"]:
-            orange_mask = cv2.inRange(hsv, (10, 130, 90), (24, 255, 255))
+            orange_mask = cv2.inRange(hsv, (5, 75, 70), (25, 255, 255))
             orange_mask = cv2.morphologyEx(orange_mask, cv2.MORPH_CLOSE, kernel)
             cnts, _ = cv2.findContours(orange_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             for cnt in cnts:
-                if cv2.contourArea(cnt) >= MIN_FRUIT_AREA:
+                area = cv2.contourArea(cnt)
+                if MIN_FRUIT_AREA <= area <= (orig_w * orig_h * 0.70):
                     x, y, w, h = cv2.boundingRect(cnt)
                     aspect = float(max(w, h)) / float(max(min(w, h), 1))
                     hull = cv2.convexHull(cnt)
-                    solidity = float(cv2.contourArea(cnt)) / max(cv2.contourArea(hull), 1.0)
-                    if aspect <= 1.45 and solidity >= 0.80 and w >= MIN_FRUIT_WIDTH and h >= MIN_FRUIT_HEIGHT:
+                    solidity = float(area) / max(cv2.contourArea(hull), 1.0)
+                    if aspect <= 1.60 and solidity >= 0.70 and w >= MIN_FRUIT_WIDTH and h >= MIN_FRUIT_HEIGHT and w < (orig_w - 20) and h < (orig_h - 20):
                         candidates.append(("orange", 0.90, (x, y, min(orig_w, x + w), min(orig_h, y + h))))
 
         # Banana (legacy fallback when target is explicitly banana)
@@ -896,17 +1031,23 @@ class FruitDetector:
         crop: np.ndarray,
         fruit_type: str,
         conf_threshold: Optional[float] = None,
-    ) -> Tuple[str, str, float, bool]:
+    ) -> Tuple[DefectCondition, str, float, bool]:
         """Run Stage 2 defect classification strictly on the verified fruit crop.
+
+        Calibrated into unified 4 classes:
+          - Class 0: 'Healthy'           -> is_defect = False -> PASS (Servo 0°)
+          - Class 1: 'Bruise_or_Scratch' -> is_defect = True  -> REJECT (Servo 90°)
+          - Class 2: 'Scab_or_Canker'    -> is_defect = True  -> REJECT (Servo 90°)
+          - Class 3: 'Rot_or_Blight'     -> is_defect = True  -> REJECT (Servo 90°)
 
         Returns:
             Tuple of (condition, compound_class_name, confidence, is_defect).
-            - If defect detected: (defect_condition, f"{fruit}_{defect}", conf, True)
-            - If no defect exceeds threshold: ("fresh", f"{fruit}_fresh", conf, False)
+            Condition is a DefectCondition instance offering unified 4-class naming
+            while maintaining f"{fruit}_{condition}" backwards compatibility.
         """
         thresh = conf_threshold if conf_threshold is not None else self.conf_threshold
 
-        defect_condition = None
+        defect_condition: Optional[DefectCondition] = None
         defect_confidence = 0.0
 
         # 1. Neural Defect Classifier
@@ -938,7 +1079,8 @@ class FruitDetector:
                 best_cls = int(np.argmax(scores[best_idx]))
 
                 if best_conf >= thresh:
-                    defect_condition = defect_label_map.get(best_cls, "bruised")
+                    raw_cls = defect_label_map.get(best_cls, "bruised")
+                    defect_condition = make_defect_condition(raw_cls)
                     defect_confidence = round(best_conf, 4)
             except Exception as exc:
                 logger.debug("Defect net inference skipped: %s", exc)
@@ -974,7 +1116,7 @@ class FruitDetector:
 
             fruit_pixels = np.count_nonzero(fruit_mask)
             if fruit_pixels > 0:
-                # True necrotic decay spot inside fruit (loss of saturation + deep darkness)
+                # Class 3: Rot_or_Blight (True necrotic decay spot inside fruit)
                 rot_mask = (v < 60) & (s < 110) & fruit_mask
                 rot_cnts, _ = cv2.findContours(
                     rot_mask.astype(np.uint8) * 255, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
@@ -982,11 +1124,11 @@ class FruitDetector:
                 max_rot_area = max([cv2.contourArea(c) for c in rot_cnts], default=0.0)
                 rot_ratio = max_rot_area / float(fruit_pixels)
                 if rot_ratio > 0.025:
-                    defect_condition = "rotten"
+                    defect_condition = make_defect_condition("rotten")
                     defect_confidence = round(min(0.96, 0.80 + rot_ratio * 2.0), 4)
 
+                # Class 1: Bruise_or_Scratch (Discolored bruise patch)
                 if defect_condition is None:
-                    # Discolored bruise patch
                     brown_mask = (
                         (h >= 8)
                         & (h <= 26)
@@ -1002,12 +1144,12 @@ class FruitDetector:
                     max_brown_area = max([cv2.contourArea(c) for c in brown_cnts], default=0.0)
                     brown_ratio = max_brown_area / float(fruit_pixels)
                     if brown_ratio > 0.035:
-                        defect_condition = "bruised"
+                        defect_condition = make_defect_condition("bruised")
                         defect_confidence = round(min(0.94, 0.75 + brown_ratio * 2.0), 4)
 
-                # C. Bug bite (small localized necrotic puncture holes)
+                # Class 2: Scab_or_Canker (small localized necrotic puncture holes / scabs)
                 if defect_condition is None:
-                    bug_mask = (v < 50) & (s < 120) & fruit_mask
+                    bug_mask = (v < 60) & (s < 180) & fruit_mask
                     bug_cnts, _ = cv2.findContours(
                         bug_mask.astype(np.uint8) * 255, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                     )
@@ -1018,10 +1160,10 @@ class FruitDetector:
                         max_puncture = max(valid_punctures)
                         puncture_ratio = max_puncture / float(fruit_pixels)
                         if puncture_ratio >= 0.003:
-                            defect_condition = "bug_bite"
+                            defect_condition = make_defect_condition("bug_bite")
                             defect_confidence = round(min(0.92, 0.78 + puncture_ratio * 3.0), 4)
 
-                # D. Scarred / Russeting (pale grayish/corky scrape or surface scarring)
+                # Class 1: Bruise_or_Scratch (Scarred / Russetting pale corky scrape)
                 if defect_condition is None:
                     scar_mask = (s < 45) & (v >= 80) & (v <= 210) & fruit_mask
                     scar_cnts, _ = cv2.findContours(
@@ -1030,15 +1172,70 @@ class FruitDetector:
                     max_scar_area = max([cv2.contourArea(c) for c in scar_cnts], default=0.0)
                     scar_ratio = max_scar_area / float(fruit_pixels)
                     if scar_ratio > 0.040:
-                        defect_condition = "scarred"
+                        defect_condition = make_defect_condition("scarred")
                         defect_confidence = round(min(0.91, 0.76 + scar_ratio * 2.0), 4)
 
         if defect_condition is not None:
-            compound = f"{fruit_type}_{defect_condition}"
+            compound = f"{fruit_type}_{defect_condition.legacy_name}"
             return defect_condition, compound, defect_confidence, True
         else:
+            fresh_cond = make_defect_condition("fresh")
             compound = f"{fruit_type}_fresh"
-            return "fresh", compound, 0.92, False
+            return fresh_cond, compound, 0.92, False
+
+    @staticmethod
+    def get_stage2_defect_color(condition: Any) -> Tuple[int, int, int]:
+        """Return BGR color coding for Stage 2 defect classes:
+          - Healthy: Green (0, 220, 0)
+          - Bruise_or_Scratch: Yellow (0, 220, 255)
+          - Scab_or_Canker: Orange (0, 140, 255)
+          - Rot_or_Blight: Red (0, 0, 220)
+        """
+        return get_defect_color(condition)
+
+    @staticmethod
+    def annotate_frame(
+        frame: np.ndarray,
+        detections: Sequence[FruitDetection],
+        line_thickness: int = 2,
+    ) -> np.ndarray:
+        """Draw bounding boxes with calibrated 4-class Stage 2 color coding.
+
+        Color coding:
+          - Healthy: Green (0, 220, 0)
+          - Bruise_or_Scratch: Yellow (0, 220, 255)
+          - Scab_or_Canker: Orange (0, 140, 255)
+          - Rot_or_Blight: Red (0, 0, 220)
+        """
+        annotated = frame.copy()
+        for det in detections:
+            color = get_defect_color(det.condition)
+            x1, y1, x2, y2 = det.bbox
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, line_thickness)
+
+            unified = getattr(det.condition, "unified_name", str(det.condition))
+            label = f"{det.fruit_type.capitalize()}: {unified} ({det.confidence:.2f})"
+            (tw, th), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            y_label = max(y1, th + 4)
+            cv2.rectangle(
+                annotated,
+                (x1, y_label - th - 4),
+                (x1 + tw + 6, y_label + baseline),
+                color,
+                -1,
+            )
+            text_color = (0, 0, 0) if color != (0, 0, 220) else (255, 255, 255)
+            cv2.putText(
+                annotated,
+                label,
+                (x1 + 3, y_label - 2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                text_color,
+                1,
+                cv2.LINE_AA,
+            )
+        return annotated
 
     # ========================================================================
     # Primary Detect Interface

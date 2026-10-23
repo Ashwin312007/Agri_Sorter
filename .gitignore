@@ -19,6 +19,10 @@ data/merged/
 data/downloads/
 data/compound_fruits/
 data/multi_fruit_defects/
+data/unified_fruit_defects/images/
+data/unified_fruit_defects/labels/
+!data/unified_fruit_defects/data.yaml
+data/unified_demo/
 data/processed/
 data/**/*.jpg
 data/**/*.jpeg

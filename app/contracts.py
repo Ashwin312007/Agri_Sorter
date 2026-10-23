@@ -20,13 +20,20 @@ EXTENDED_COMPOUND_CLASSES = [
     f"{fruit}_{cond}" for fruit in EXTENDED_FRUITS for cond in CONDITIONS
 ]
 
+UNIFIED_DEFECT_CLASSES = [
+    "Healthy",
+    "Bruise_or_Scratch",
+    "Scab_or_Canker",
+    "Rot_or_Blight",
+]
+
 STATUS_FRESH = "FRESH"
 STATUS_REJECT = "REJECT"
 
 
 def is_fresh_class(label: str) -> bool:
     """Check if class label denotes fresh quality."""
-    return label.endswith("_fresh") or label == "fresh"
+    return label.lower() in ["healthy", "fresh"] or label.endswith("_fresh") or label.lower().endswith("_fresh")
 
 
 def is_defect_class(label: str) -> bool:
