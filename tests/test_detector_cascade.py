@@ -301,3 +301,23 @@ def test_face_and_eye_suppression_produces_zero_fruit(detector: FruitDetector):
 
     dets = detector.detect(face_canvas)
     assert len(dets) == 0, f"Human face canvas must produce ZERO fruit detections, got {len(dets)}"
+
+
+def test_unified_4class_detector_actuation_angles():
+    """Verify rebuilt 4-class unified detector classes match strict actuation angles.
+
+    Healthy: 0° (PASS)
+    Bruise_or_Scratch: 90° (REJECT)
+    Scab_or_Canker: 90° (REJECT)
+    Rot_or_Blight: 90° (REJECT)
+    """
+    for cls_name in ["Healthy", "Bruise_or_Scratch", "Scab_or_Canker", "Rot_or_Blight"]:
+        cond = make_defect_condition(cls_name)
+        if cls_name == "Healthy":
+            assert cond.servo_angle == 0
+            assert cond.is_defect is False
+            assert STAGE2_SERVO_MAP[cls_name] == 0
+        else:
+            assert cond.servo_angle == 90
+            assert cond.is_defect is True
+            assert STAGE2_SERVO_MAP[cls_name] == 90

@@ -17,6 +17,9 @@ from scripts.dataset_pipeline import (
     CLASS_TO_ID,
     ID_TO_CLASS,
     DATASET_CATALOG,
+    ROBOFLOW_PROJECT_MAPPINGS,
+    UNIFIED_CLASSES,
+    VERIFIED_ROBOFLOW_PROJECTS,
     ConveyorAugmentor,
     Deduplicator,
     DatasetPipeline,
@@ -502,3 +505,68 @@ def test_dataset_presets():
     # All preset returns all 18 + local (19 entries)
     all_entries = get_catalog_entries_for_preset("all")
     assert len(all_entries) >= 18
+
+
+def test_verified_roboflow_projects_rf01_to_rf14():
+    """Verify all 14 Roboflow projects RF-01 to RF-14 are mapped to 4 unified classes."""
+    assert len(VERIFIED_ROBOFLOW_PROJECTS) == 14
+    for i in range(1, 15):
+        rf_id = f"RF-{i:02d}"
+        assert rf_id in VERIFIED_ROBOFLOW_PROJECTS
+        entry = VERIFIED_ROBOFLOW_PROJECTS[rf_id]
+        assert rf_id in ROBOFLOW_PROJECT_MAPPINGS
+        assert entry["project"] in ROBOFLOW_PROJECT_MAPPINGS
+
+        mapping = ROBOFLOW_PROJECT_MAPPINGS[rf_id]
+        assert len(mapping) > 0
+        for raw_lbl, target_cls in mapping.items():
+            assert target_cls in UNIFIED_CLASSES, f"{rf_id}: {raw_lbl} -> {target_cls} invalid"
+
+
+def test_unified_4class_source_labels_matrix():
+    """Verify Sheet 2 mapping matrix of raw multi-fruit defects into 4 unified classes."""
+    healthy_samples = ["HEALTHY", "Guava_healthy", "Grade A", "green", "ripe", "Fresh", "Fresh Oranges", "Freshpomegranate"]
+    bruise_samples = ["bruising", "crack", "insect_bite", "Brown Spot", "skin damage", "Grade B", "Minor peel rub"]
+    scab_samples = ["SCAB", "BLOTCH", "rusetting", "Scab", "Mango Scab", "Canker", "Cercospora"]
+    rot_samples = ["rotten", "ROT", "Phytopthora", "Styler and Root", "Guava_Fruit_fly", "Black Spot", "deformed", "Grade C", "Blackspot", "Rotten Oranges", "Anthracnose", "Bacterial_Blight", "Rottenpomegranate"]
+
+    for lbl in healthy_samples:
+        clean = lbl.strip().lower()
+        # Find in general mapping or project mappings
+        matched = False
+        for proj_map in ROBOFLOW_PROJECT_MAPPINGS.values():
+            if clean in proj_map:
+                assert proj_map[clean] == "Healthy"
+                matched = True
+                break
+        assert matched, f"Failed to match healthy label: {lbl}"
+
+    for lbl in bruise_samples:
+        clean = lbl.strip().lower()
+        matched = False
+        for proj_map in ROBOFLOW_PROJECT_MAPPINGS.values():
+            if clean in proj_map:
+                assert proj_map[clean] == "Bruise_or_Scratch"
+                matched = True
+                break
+        assert matched, f"Failed to match bruise label: {lbl}"
+
+    for lbl in scab_samples:
+        clean = lbl.strip().lower()
+        matched = False
+        for proj_map in ROBOFLOW_PROJECT_MAPPINGS.values():
+            if clean in proj_map:
+                assert proj_map[clean] == "Scab_or_Canker"
+                matched = True
+                break
+        assert matched, f"Failed to match scab label: {lbl}"
+
+    for lbl in rot_samples:
+        clean = lbl.strip().lower()
+        matched = False
+        for proj_map in ROBOFLOW_PROJECT_MAPPINGS.values():
+            if clean in proj_map:
+                assert proj_map[clean] == "Rot_or_Blight"
+                matched = True
+                break
+        assert matched, f"Failed to match rot label: {lbl}"

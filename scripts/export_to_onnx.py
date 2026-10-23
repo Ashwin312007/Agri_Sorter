@@ -2,16 +2,25 @@
 """Workstation utility to export PyTorch/Ultralytics models (.pt) to ONNX (.onnx).
 
 Run this script on a development/training workstation (with PyTorch and Ultralytics)
-to generate lightweight ONNX models optimized for Raspberry Pi 4 OpenCV DNN inference.
+to generate lightweight ONNX models optimized for Raspberry Pi 4 / Hailo edge inference.
+Supports the unified 4-class defect hierarchy model naming ('yolo11n_fruit').
 
 Usage:
     python scripts/export_to_onnx.py
-    python scripts/export_to_onnx.py --detector models/detector/yolo11n.pt --classifier models/external/best.pt
+    python scripts/export_to_onnx.py --detector models/detector/yolo11n_fruit.pt --detector-output models/detector/yolo11n_fruit.onnx
 """
 import argparse
 import os
+import shutil
 import sys
 from pathlib import Path
+from typing import Optional
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.contracts import UNIFIED_DEFECT_CLASSES
 
 
 def check_dependencies() -> bool:
@@ -84,10 +93,12 @@ def export_model(
     task: str = "detect",
     dynamic: bool = False,
     opset: int = 12,
+    output_path: Optional[Path] = None,
 ) -> Path:
-    """Export a YOLO model to ONNX format."""
+    """Export a YOLO model to ONNX format and save companion class metadata JSON."""
     from ultralytics import YOLO
 
+    model_path = Path(model_path).resolve()
     print(f"\n[+] Loading {task} model: {model_path}")
     model = YOLO(str(model_path))
 
@@ -100,6 +111,15 @@ def export_model(
         simplify=True,
     )
     exported = Path(exported_path)
+
+    # If specific output destination is requested (e.g. yolo11n_fruit.onnx), move/copy to it
+    if output_path is not None:
+        target_path = Path(output_path).resolve()
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        if exported != target_path:
+            shutil.copy(exported, target_path)
+            exported = target_path
+
     if task == "detect":
         patch_onnx_for_opencv_dnn(exported)
 
@@ -107,14 +127,24 @@ def export_model(
     try:
         import json
         names = model.names
+        if isinstance(names, dict):
+            names_dict = {int(k): str(v) for k, v in names.items()}
+        elif isinstance(names, (list, tuple)):
+            names_dict = {i: str(v) for i, v in enumerate(names)}
+        else:
+            names_dict = {i: name for i, name in enumerate(UNIFIED_DEFECT_CLASSES)}
+
         meta_dict = {
             "task": task,
-            "names": {int(k): str(v) for k, v in names.items()} if isinstance(names, dict) else list(names),
+            "model_name": exported.stem,
+            "names": names_dict,
+            "num_classes": len(names_dict),
             "imgsz": imgsz,
         }
-        with open(exported.with_suffix(".json"), "w") as jf:
+        json_path = exported.with_suffix(".json")
+        with open(json_path, "w", encoding="utf-8") as jf:
             json.dump(meta_dict, jf, indent=2)
-        print(f"[+] Saved sibling class metadata to: {exported.with_suffix('.json')}")
+        print(f"[+] Saved sibling class metadata to: {json_path}")
     except Exception as exc:
         print(f"[!] Note: Could not save class metadata JSON: {exc}")
 
@@ -126,14 +156,25 @@ def export_model(
 def main() -> None:
     repo_root = Path(__file__).resolve().parent.parent
 
+    # Auto-detect default detector: prefer yolo11n_fruit.pt if exists, else yolo11n.pt
+    default_det = repo_root / "models" / "detector" / "yolo11n_fruit.pt"
+    if not default_det.is_file():
+        default_det = repo_root / "models" / "detector" / "yolo11n.pt"
+
     parser = argparse.ArgumentParser(
-        description="Export Agri_Sorter YOLO weights (.pt) to ONNX for Raspberry Pi 4 OpenCV DNN."
+        description="Export Agri_Sorter YOLO weights (.pt) to ONNX for Raspberry Pi 4 / Hailo edge deployment."
     )
     parser.add_argument(
         "--detector",
         type=str,
-        default=str(repo_root / "models" / "detector" / "yolo11n.pt"),
-        help="Path to detector .pt model",
+        default=str(default_det),
+        help="Path to detector .pt model (default: models/detector/yolo11n_fruit.pt or yolo11n.pt)",
+    )
+    parser.add_argument(
+        "--detector-output",
+        type=str,
+        default=str(repo_root / "models" / "detector" / "yolo11n_fruit.onnx"),
+        help="Output path for exported detector ONNX (default: models/detector/yolo11n_fruit.onnx)",
     )
     parser.add_argument(
         "--classifier",
@@ -144,8 +185,8 @@ def main() -> None:
     parser.add_argument(
         "--detector-size",
         type=int,
-        default=416,
-        help="Image size for detector (default: 416)",
+        default=640,
+        help="Image size for detector (default: 640)",
     )
     parser.add_argument(
         "--classifier-size",
@@ -186,6 +227,7 @@ def main() -> None:
             task="detect",
             dynamic=args.dynamic,
             opset=args.opset,
+            output_path=Path(args.detector_output) if args.detector_output else None,
         )
         exported_files.append(det_out)
     else:
@@ -206,7 +248,7 @@ def main() -> None:
     if exported_files:
         print("\n" + "=" * 70)
         print("🎉 EXPORT COMPLETED SUCCESSFULLY!")
-        print("Exported ONNX Models for Raspberry Pi 4:")
+        print("Exported ONNX Models for Raspberry Pi 4 / Hailo-8L:")
         for f in exported_files:
             print(f"  - {f} ({f.stat().st_size / (1024*1024):.2f} MB)")
         print("\nNext steps:")

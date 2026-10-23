@@ -209,7 +209,8 @@ def test_fruit_filter_selection(detector: FruitDetector):
 def test_all_20_compound_classes_supported(detector: FruitDetector):
     """Verify all 20 compound classes are recognized across all 4 fruits."""
     assert len(detector.class_names) == 20
-    for fruit in ["apple", "banana", "orange", "mango"]:
+    fourth_fruit = "guava" if any("guava" in c for c in detector.class_names) else "banana"
+    for fruit in ["apple", fourth_fruit, "orange", "mango"]:
         for cond in ["fresh", "rotten", "bruised", "scarred", "bug_bite"]:
             expected_compound = f"{fruit}_{cond}"
             assert expected_compound in detector.class_names

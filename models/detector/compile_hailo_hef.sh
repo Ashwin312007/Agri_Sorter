@@ -9,7 +9,7 @@ echo "=================================================================="
 echo " Starting Hailo Dataflow Compiler for Raspberry Pi AI HAT (hailo8l)"
 echo "=================================================================="
 
-ONNX_MODEL="/home/taiki/Agri_Sorter/models/detector/yolo11n.onnx"
+ONNX_MODEL="/home/taiki/Agri_Sorter/models/detector/yolo11n_fruit.onnx"
 ALLS_SCRIPT="/home/taiki/Agri_Sorter/models/detector/yolo11n_fruit.alls"
 OUTPUT_HEF="/home/taiki/Agri_Sorter/models/detector/yolo11n_fruit.hef"
 CALIB_COUNT=64

@@ -149,11 +149,113 @@ DEFAULT_OUTPUT_DIR = REPO_ROOT / "data" / "unified_fruit_defects"
 DEFAULT_MIN_CLASS_THRESHOLD = 300
 
 # -----------------------------------------------------------------------------
-# Comprehensive 13 Roboflow Datasets Mapping to Unified 4 Defect Classes:
+# Comprehensive 14 Roboflow Datasets Mapping to Unified 4 Defect Classes
+# (Verified against Fruit_Defect_YOLO_Datasets_Verified.xlsx):
 # 0: Healthy, 1: Bruise_or_Scratch, 2: Scab_or_Canker, 3: Rot_or_Blight
 # -----------------------------------------------------------------------------
+VERIFIED_ROBOFLOW_PROJECTS: Dict[str, Dict[str, str]] = {
+    "RF-01": {
+        "id": "RF-01",
+        "fruit": "Apple",
+        "name": "Apple Surface Defects (AppleSort)",
+        "project": "applesort-esgll/apple_surface_defects",
+        "url": "https://universe.roboflow.com/applesort-esgll/apple_surface_defects",
+    },
+    "RF-02": {
+        "id": "RF-02",
+        "fruit": "Apple",
+        "name": "Apple Fruit Disease Detection",
+        "project": "fruit-disease-detection-nrrei/apple-fruit-disease-detection-zei6u",
+        "url": "https://universe.roboflow.com/fruit-disease-detection-nrrei/apple-fruit-disease-detection-zei6u",
+    },
+    "RF-03": {
+        "id": "RF-03",
+        "fruit": "Apple",
+        "name": "Apple Defect Detection (pkekm)",
+        "project": "appledefectsdetection/apple-defect-detection-pkekm",
+        "url": "https://universe.roboflow.com/appledefectsdetection/apple-defect-detection-pkekm/dataset/1",
+    },
+    "RF-04": {
+        "id": "RF-04",
+        "fruit": "Guava",
+        "name": "Detection Guava Disease (chisilia)",
+        "project": "chisilia/detection-guava-disease",
+        "url": "https://universe.roboflow.com/chisilia/detection-guava-disease",
+    },
+    "RF-05": {
+        "id": "RF-05",
+        "fruit": "Guava",
+        "name": "Guava Fruit Hub (guava-h8gxt)",
+        "project": "guava-h8gxt",
+        "url": "https://universe.roboflow.com/guava-h8gxt",
+    },
+    "RF-06": {
+        "id": "RF-06",
+        "fruit": "Guava",
+        "name": "Guava Disease Model (chisilia v5)",
+        "project": "chisilia/guava-disease-5fdvy",
+        "url": "https://universe.roboflow.com/chisilia/guava-disease-5fdvy/dataset/5",
+    },
+    "RF-07": {
+        "id": "RF-07",
+        "fruit": "Mango",
+        "name": "Mango Defect Detection (mintras)",
+        "project": "mintras-workspace/mango-defect-detection-pc4gs",
+        "url": "https://universe.roboflow.com/mintras-workspace/mango-defect-detection-pc4gs",
+    },
+    "RF-08": {
+        "id": "RF-08",
+        "fruit": "Mango",
+        "name": "Mango Defect Detection (Villanueva)",
+        "project": "kaycee-kaye-y-villanueva-mzmks/mango-defect-detection",
+        "url": "https://universe.roboflow.com/kaycee-kaye-y-villanueva-mzmks/mango-defect-detection",
+    },
+    "RF-09": {
+        "id": "RF-09",
+        "fruit": "Mango",
+        "name": "MangoGrading (MangoClass)",
+        "project": "mangoclass/mangograding",
+        "url": "https://universe.roboflow.com/mangoclass/mangograding",
+    },
+    "RF-10": {
+        "id": "RF-10",
+        "fruit": "Orange",
+        "name": "Orange Disease Detection (CAPSTONE)",
+        "project": "capstone-2az9h/orange-disease-detection-qunki",
+        "url": "https://universe.roboflow.com/capstone-2az9h/orange-disease-detection-qunki",
+    },
+    "RF-11": {
+        "id": "RF-11",
+        "fruit": "Orange",
+        "name": "Orange Defect Dataset (Mydetect)",
+        "project": "mydetect-o2wvw/orange-defect",
+        "url": "https://universe.roboflow.com/mydetect-o2wvw/orange-defect",
+    },
+    "RF-12": {
+        "id": "RF-12",
+        "fruit": "Pomegranate",
+        "name": "Pomegranate Disease Detection (Fizza)",
+        "project": "fizza/pomegranate-disease-detection-t7rg0",
+        "url": "https://universe.roboflow.com/fizza/pomegranate-disease-detection-t7rg0",
+    },
+    "RF-13": {
+        "id": "RF-13",
+        "fruit": "Pomegranate",
+        "name": "Pomegranate Disease Detection (IM)",
+        "project": "im-ririo/pomegranate-disease-detection-29ocz-yz4hn",
+        "url": "https://universe.roboflow.com/im-ririo/pomegranate-disease-detection-29ocz-yz4hn/dataset/2",
+    },
+    "RF-14": {
+        "id": "RF-14",
+        "fruit": "Pomegranate",
+        "name": "Pomegranate Fresh vs. Rotten (Bin)",
+        "project": "bin-wnwyu/pomegranate-hhj6l",
+        "url": "https://universe.roboflow.com/bin-wnwyu/pomegranate-hhj6l",
+    },
+}
+
 ROBOFLOW_PROJECT_MAPPINGS: Dict[str, Dict[str, str]] = {
-    # 1. applesort-esgll/apple_surface_defects
+    # RF-01: applesort-esgll/apple_surface_defects
     "applesort-esgll/apple_surface_defects": {
         "healthy": "Healthy",
         "fresh": "Healthy",
@@ -162,33 +264,70 @@ ROBOFLOW_PROJECT_MAPPINGS: Dict[str, Dict[str, str]] = {
         "crack": "Bruise_or_Scratch",
         "insect_bite": "Bruise_or_Scratch",
         "insect bite": "Bruise_or_Scratch",
+        "rusetting": "Scab_or_Canker",
         "rotten": "Rot_or_Blight",
     },
-    # 2. fruit-disease-detection-nrrei/apple-fruit-disease-detection-zei6u
+    # RF-02: fruit-disease-detection-nrrei/apple-fruit-disease-detection-zei6u
     "fruit-disease-detection-nrrei/apple-fruit-disease-detection-zei6u": {
         "healthy": "Healthy",
+        "fresh": "Healthy",
         "blotch": "Scab_or_Canker",
         "scab": "Scab_or_Canker",
         "rot": "Rot_or_Blight",
+        "rotten": "Rot_or_Blight",
     },
-    # 3. appledefectdetection/apple-defects-yafjq
+    # RF-03: appledefectsdetection/apple-defect-detection-pkekm (& alias appledefectdetection/apple-defects-yafjq)
+    "appledefectsdetection/apple-defect-detection-pkekm": {
+        "healthy": "Healthy",
+        "fresh": "Healthy",
+        "surface defects & healthy apples": "Healthy",
+        "bruise": "Bruise_or_Scratch",
+        "bruising": "Bruise_or_Scratch",
+        "puncture": "Bruise_or_Scratch",
+        "blemish": "Bruise_or_Scratch",
+        "defect": "Bruise_or_Scratch",
+        "surface defects": "Bruise_or_Scratch",
+        "scab": "Scab_or_Canker",
+        "rot": "Rot_or_Blight",
+        "rotten": "Rot_or_Blight",
+    },
     "appledefectdetection/apple-defects-yafjq": {
         "healthy": "Healthy",
+        "fresh": "Healthy",
         "bruise": "Bruise_or_Scratch",
         "puncture": "Bruise_or_Scratch",
         "blemish": "Bruise_or_Scratch",
         "scab": "Scab_or_Canker",
         "rot": "Rot_or_Blight",
     },
-    # 4. chisilia/detection-guava-disease
+    # RF-04: chisilia/detection-guava-disease
     "chisilia/detection-guava-disease": {
+        "healthy": "Healthy",
         "scab": "Scab_or_Canker",
+        "scars": "Scab_or_Canker",
         "phytopthora": "Rot_or_Blight",
         "styler and root": "Rot_or_Blight",
         "styler_and_root": "Rot_or_Blight",
         "styler and root rot": "Rot_or_Blight",
+        "rot": "Rot_or_Blight",
     },
-    # 5. guava-wedlv/guava-3hezg
+    # RF-05: guava-h8gxt (& alias guava-wedlv/guava-3hezg)
+    "guava-h8gxt": {
+        "guava_healthy": "Healthy",
+        "healthy": "Healthy",
+        "fresh": "Healthy",
+        "canker": "Scab_or_Canker",
+        "fruit spot": "Scab_or_Canker",
+        "fruit_spot": "Scab_or_Canker",
+        "scab": "Scab_or_Canker",
+        "guava_fruit_fly": "Rot_or_Blight",
+        "guava_fruit-fly": "Rot_or_Blight",
+        "fruit_fly": "Rot_or_Blight",
+        "guava disease": "Rot_or_Blight",
+        "guava_disease": "Rot_or_Blight",
+        "disease": "Rot_or_Blight",
+        "rot": "Rot_or_Blight",
+    },
     "guava-wedlv/guava-3hezg": {
         "healthy": "Healthy",
         "canker": "Scab_or_Canker",
@@ -196,7 +335,22 @@ ROBOFLOW_PROJECT_MAPPINGS: Dict[str, Dict[str, str]] = {
         "fruit_spot": "Scab_or_Canker",
         "disease": "Rot_or_Blight",
     },
-    # 6. thao-ulmra/guava-qnkee-1uz3i
+    # RF-06: chisilia/guava-disease-5fdvy (& alias thao-ulmra/guava-qnkee-1uz3i)
+    "chisilia/guava-disease-5fdvy": {
+        "healthy": "Healthy",
+        "fresh": "Healthy",
+        "ripe": "Healthy",
+        "fresh ripe": "Healthy",
+        "scab": "Scab_or_Canker",
+        "surface lesion": "Scab_or_Canker",
+        "surface lesions": "Scab_or_Canker",
+        "lesions": "Scab_or_Canker",
+        "rot": "Rot_or_Blight",
+        "overripe": "Rot_or_Blight",
+        "decaying": "Rot_or_Blight",
+        "penyakit": "Rot_or_Blight",
+        "guava-penyakit-buah-jambu": "Rot_or_Blight",
+    },
     "thao-ulmra/guava-qnkee-1uz3i": {
         "fresh ripe": "Healthy",
         "fresh_ripe": "Healthy",
@@ -205,8 +359,24 @@ ROBOFLOW_PROJECT_MAPPINGS: Dict[str, Dict[str, str]] = {
         "overripe": "Rot_or_Blight",
         "decaying": "Rot_or_Blight",
     },
-    # 7. kaycee-kaye-y-villanueva-mzmks/mango-defect-detection
+    # RF-07: mintras-workspace/mango-defect-detection-pc4gs
+    "mintras-workspace/mango-defect-detection-pc4gs": {
+        "green": "Healthy",
+        "ripe": "Healthy",
+        "fresh": "Healthy",
+        "healthy": "Healthy",
+        "skin damage": "Bruise_or_Scratch",
+        "skin_damage": "Bruise_or_Scratch",
+        "bruise": "Bruise_or_Scratch",
+        "scratch": "Bruise_or_Scratch",
+        "deformed": "Rot_or_Blight",
+        "rotten": "Rot_or_Blight",
+        "rot": "Rot_or_Blight",
+    },
+    # RF-08: kaycee-kaye-y-villanueva-mzmks/mango-defect-detection
     "kaycee-kaye-y-villanueva-mzmks/mango-defect-detection": {
+        "healthy": "Healthy",
+        "fresh": "Healthy",
         "black spot": "Rot_or_Blight",
         "black_spot": "Rot_or_Blight",
         "brown spot": "Bruise_or_Scratch",
@@ -214,42 +384,64 @@ ROBOFLOW_PROJECT_MAPPINGS: Dict[str, Dict[str, str]] = {
         "mango scab": "Scab_or_Canker",
         "mango_scab": "Scab_or_Canker",
         "scab": "Scab_or_Canker",
+        "rot": "Rot_or_Blight",
+        "rotten": "Rot_or_Blight",
     },
-    # 8. mangoclass/mangograding
+    # RF-09: mangoclass/mangograding
     "mangoclass/mangograding": {
         "grade a": "Healthy",
         "grade_a": "Healthy",
         "grade-a": "Healthy",
+        "clean": "Healthy",
         "grade b": "Bruise_or_Scratch",
         "grade_b": "Bruise_or_Scratch",
         "grade-b": "Bruise_or_Scratch",
+        "scars": "Bruise_or_Scratch",
+        "scar": "Bruise_or_Scratch",
         "grade c": "Rot_or_Blight",
         "grade_c": "Rot_or_Blight",
         "grade-c": "Rot_or_Blight",
+        "rot": "Rot_or_Blight",
+        "deformed": "Rot_or_Blight",
     },
-    # 9. capstone-2az9h/orange-disease-detection-qunki
+    # RF-10: capstone-2az9h/orange-disease-detection-qunki
     "capstone-2az9h/orange-disease-detection-qunki": {
         "fresh": "Healthy",
+        "healthy": "Healthy",
         "canker": "Scab_or_Canker",
         "blackspot": "Rot_or_Blight",
         "black spot": "Rot_or_Blight",
         "black_spot": "Rot_or_Blight",
+        "rot": "Rot_or_Blight",
     },
-    # 10. mydetect-o2wvw/orange-defect
+    # RF-11: mydetect-o2wvw/orange-defect
     "mydetect-o2wvw/orange-defect": {
         "fresh": "Healthy",
+        "fresh oranges": "Healthy",
+        "fresh_oranges": "Healthy",
+        "healthy": "Healthy",
+        "minor peel rub": "Bruise_or_Scratch",
+        "peel rub": "Bruise_or_Scratch",
         "defect": "Rot_or_Blight",
+        "rotten oranges": "Rot_or_Blight",
+        "rotten_oranges": "Rot_or_Blight",
+        "rot": "Rot_or_Blight",
+        "rotten": "Rot_or_Blight",
     },
-    # 11. orangedisease/orange-disease-2twml
-    "orangedisease/orange-disease-2twml": {
+    # RF-12: fizza/pomegranate-disease-detection-t7rg0 (& alias pomegranate-diseases/pomegranate-disease-detection-t7rg0)
+    "fizza/pomegranate-disease-detection-t7rg0": {
+        "healthy": "Healthy",
         "fresh": "Healthy",
-        "citrus canker": "Scab_or_Canker",
-        "citrus_canker": "Scab_or_Canker",
-        "canker": "Scab_or_Canker",
-        "black spot": "Rot_or_Blight",
-        "black_spot": "Rot_or_Blight",
+        "cercospora": "Scab_or_Canker",
+        "fruit spot": "Scab_or_Canker",
+        "fruit_spot": "Scab_or_Canker",
+        "anthracnose": "Rot_or_Blight",
+        "bacterial blight": "Rot_or_Blight",
+        "bacterial_blight": "Rot_or_Blight",
+        "heart rot": "Rot_or_Blight",
+        "heart_rot": "Rot_or_Blight",
+        "rot": "Rot_or_Blight",
     },
-    # 12. pomegranate-diseases/pomegranate-disease-detection-t7rg0
     "pomegranate-diseases/pomegranate-disease-detection-t7rg0": {
         "bacterial blight": "Rot_or_Blight",
         "bacterial_blight": "Rot_or_Blight",
@@ -258,7 +450,18 @@ ROBOFLOW_PROJECT_MAPPINGS: Dict[str, Dict[str, str]] = {
         "fruit spot": "Scab_or_Canker",
         "fruit_spot": "Scab_or_Canker",
     },
-    # 13. orin-f84rr/pomegranate-gqopm
+    # RF-13: im-ririo/pomegranate-disease-detection-29ocz-yz4hn (& alias orin-f84rr/pomegranate-gqopm)
+    "im-ririo/pomegranate-disease-detection-29ocz-yz4hn": {
+        "healthy": "Healthy",
+        "fresh": "Healthy",
+        "surface lesions": "Scab_or_Canker",
+        "surface_lesions": "Scab_or_Canker",
+        "lesions": "Scab_or_Canker",
+        "surface crack": "Bruise_or_Scratch",
+        "bacterial blight": "Rot_or_Blight",
+        "bacterial_blight": "Rot_or_Blight",
+        "rot": "Rot_or_Blight",
+    },
     "orin-f84rr/pomegranate-gqopm": {
         "grade-1": "Healthy",
         "grade 1": "Healthy",
@@ -270,7 +473,35 @@ ROBOFLOW_PROJECT_MAPPINGS: Dict[str, Dict[str, str]] = {
         "grade 3": "Rot_or_Blight",
         "grade_3": "Rot_or_Blight",
     },
+    # RF-14: bin-wnwyu/pomegranate-hhj6l
+    "bin-wnwyu/pomegranate-hhj6l": {
+        "freshpomegranate": "Healthy",
+        "fresh pomegranate": "Healthy",
+        "fresh_pomegranate": "Healthy",
+        "fresh": "Healthy",
+        "healthy": "Healthy",
+        "rottenpomegranate": "Rot_or_Blight",
+        "rotten pomegranate": "Rot_or_Blight",
+        "rotten_pomegranate": "Rot_or_Blight",
+        "rot": "Rot_or_Blight",
+        "rotten": "Rot_or_Blight",
+    },
+    # Legacy / alias: orangedisease/orange-disease-2twml
+    "orangedisease/orange-disease-2twml": {
+        "fresh": "Healthy",
+        "citrus canker": "Scab_or_Canker",
+        "citrus_canker": "Scab_or_Canker",
+        "canker": "Scab_or_Canker",
+        "black spot": "Rot_or_Blight",
+        "black_spot": "Rot_or_Blight",
+    },
 }
+
+# Register RF-01 through RF-14 aliases into ROBOFLOW_PROJECT_MAPPINGS
+for _rf_id, _meta in VERIFIED_ROBOFLOW_PROJECTS.items():
+    _proj = _meta["project"]
+    if _proj in ROBOFLOW_PROJECT_MAPPINGS:
+        ROBOFLOW_PROJECT_MAPPINGS[_rf_id] = ROBOFLOW_PROJECT_MAPPINGS[_proj]
 
 # Add project slug aliases (e.g. 'apple_surface_defects')
 for _k, _map in list(ROBOFLOW_PROJECT_MAPPINGS.items()):

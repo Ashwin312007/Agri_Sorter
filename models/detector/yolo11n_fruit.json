@@ -4,28 +4,12 @@
   "hw_arch": "hailo8l",
   "imgsz": 640,
   "names": {
-    "0": "apple_fresh",
-    "1": "apple_rotten",
-    "2": "apple_bruised",
-    "3": "apple_scarred",
-    "4": "apple_bug_bite",
-    "5": "banana_fresh",
-    "6": "banana_rotten",
-    "7": "banana_bruised",
-    "8": "banana_scarred",
-    "9": "banana_bug_bite",
-    "10": "orange_fresh",
-    "11": "orange_rotten",
-    "12": "orange_bruised",
-    "13": "orange_scarred",
-    "14": "orange_bug_bite",
-    "15": "mango_fresh",
-    "16": "mango_rotten",
-    "17": "mango_bruised",
-    "18": "mango_scarred",
-    "19": "mango_bug_bite"
+    "0": "Healthy",
+    "1": "Bruise_or_Scratch",
+    "2": "Scab_or_Canker",
+    "3": "Rot_or_Blight"
   },
-  "num_classes": 20,
+  "num_classes": 4,
   "hef_path": "/home/taiki/Agri_Sorter/models/detector/yolo11n_fruit.hef",
-  "onnx_path": "/home/taiki/Agri_Sorter/models/detector/yolo11n.onnx"
+  "onnx_path": "/home/taiki/Agri_Sorter/models/detector/yolo11n_fruit.onnx"
 }

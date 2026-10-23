@@ -7,10 +7,12 @@ Verifies:
 4. Sorter decision: Healthy -> PASS (0°), Defect -> REJECT (90°).
 """
 
+import json
 import numpy as np
 import pytest
 
 from app.contracts import (
+    REPO_ROOT,
     STATUS_FRESH,
     STATUS_REJECT,
     UNIFIED_DEFECT_CLASSES,
@@ -32,6 +34,7 @@ from app.web_dashboard import (
 from scripts.dataset_pipeline import (
     ROBOFLOW_PROJECT_MAPPINGS,
     UNIFIED_CLASSES,
+    VERIFIED_ROBOFLOW_PROJECTS,
     generate_unified_data_yaml,
 )
 
@@ -72,6 +75,77 @@ def test_13_roboflow_projects_mapped():
         assert len(mapping) > 0, f"Empty mapping for {proj}"
         for raw_lbl, target_cls in mapping.items():
             assert target_cls in UNIFIED_CLASSES, f"Invalid target {target_cls} for {proj}:{raw_lbl}"
+
+
+def test_14_roboflow_verified_projects_rf01_through_rf14():
+    """Verify all 14 Roboflow projects RF-01 through RF-14 are correctly registered.
+
+    Cross-referenced with Fruit_Defect_YOLO_Datasets_Verified.xlsx:
+    RF-01: Apple Surface Defects (AppleSort)
+    RF-02: Apple Fruit Disease Detection
+    RF-03: Apple Defect Detection (pkekm)
+    RF-04: Detection Guava Disease (chisilia)
+    RF-05: Guava Fruit Hub (guava-h8gxt)
+    RF-06: Guava Disease Model (chisilia v5)
+    RF-07: Mango Defect Detection (mintras)
+    RF-08: Mango Defect Detection (Villanueva)
+    RF-09: MangoGrading (MangoClass)
+    RF-10: Orange Disease Detection (CAPSTONE)
+    RF-11: Orange Defect Dataset (Mydetect)
+    RF-12: Pomegranate Disease Detection (Fizza)
+    RF-13: Pomegranate Disease Detection (IM)
+    RF-14: Pomegranate Fresh vs. Rotten (Bin)
+    """
+    assert len(VERIFIED_ROBOFLOW_PROJECTS) == 14
+
+    for rf_id in [f"RF-{i:02d}" for i in range(1, 15)]:
+        assert rf_id in VERIFIED_ROBOFLOW_PROJECTS, f"Missing {rf_id} in VERIFIED_ROBOFLOW_PROJECTS"
+        entry = VERIFIED_ROBOFLOW_PROJECTS[rf_id]
+
+        # Verify entry schema
+        assert "fruit" in entry
+        assert "name" in entry
+        assert "project" in entry
+        assert "url" in entry
+        assert entry["url"].startswith("https://universe.roboflow.com/")
+
+        # Verify registration in ROBOFLOW_PROJECT_MAPPINGS by RF-ID
+        assert rf_id in ROBOFLOW_PROJECT_MAPPINGS, f"Missing mapping for {rf_id}"
+        mapping_by_id = ROBOFLOW_PROJECT_MAPPINGS[rf_id]
+        assert len(mapping_by_id) > 0
+
+        # Verify registration by project name
+        proj_name = entry["project"]
+        assert proj_name in ROBOFLOW_PROJECT_MAPPINGS, f"Missing mapping for {proj_name}"
+        mapping_by_proj = ROBOFLOW_PROJECT_MAPPINGS[proj_name]
+        assert len(mapping_by_proj) > 0
+
+        # Verify all mapped labels strictly target the unified 4 classes
+        for raw_lbl, target_cls in mapping_by_id.items():
+            assert (
+                target_cls in UNIFIED_CLASSES
+            ), f"Invalid target {target_cls} for {rf_id}:{raw_lbl}"
+
+
+def test_rebuilt_4class_model_metadata_and_outputs():
+    """Verify rebuilt model configuration outputs map to the 4 unified classes."""
+    model_json_path = REPO_ROOT / "models" / "detector" / "yolo11n_fruit.json"
+    assert model_json_path.is_file(), f"Model config not found at {model_json_path}"
+
+    with open(model_json_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    assert meta["num_classes"] == 4
+    expected_classes = {
+        "0": "Healthy",
+        "1": "Bruise_or_Scratch",
+        "2": "Scab_or_Canker",
+        "3": "Rot_or_Blight",
+    }
+    for class_id_str, class_name in expected_classes.items():
+        assert meta["names"][class_id_str] == class_name
+        # Index lookup
+        assert UNIFIED_CLASSES[int(class_id_str)] == class_name
 
 
 def test_sorter_servo_angle_decisions():

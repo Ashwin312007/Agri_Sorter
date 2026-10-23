@@ -372,3 +372,20 @@ def test_process_test_photo_all_4_defect_classes(mock_cap, mock_coord, mock_trac
     assert hub.defect_counts["Scab_or_Canker"] >= 1
     assert hub.defect_counts["Rot_or_Blight"] >= 1
 
+
+def test_dashboard_rebuilt_4class_actuation_mappings():
+    """Verify web dashboard directly maps 4-class unified model outputs to exact actuation angles."""
+    from app.web_dashboard import map_to_defect_hierarchy
+
+    # Rebuilt 4-class outputs must map idempotently to unified taxonomy
+    for cls_name in ["Healthy", "Bruise_or_Scratch", "Scab_or_Canker", "Rot_or_Blight"]:
+        assert map_to_defect_hierarchy(cls_name) == cls_name
+
+    # Actuation angles: Healthy -> 0° PASS, Defects -> 90° REJECT
+    from app.detector import STAGE2_SERVO_MAP
+
+    assert STAGE2_SERVO_MAP["Healthy"] == 0
+    assert STAGE2_SERVO_MAP["Bruise_or_Scratch"] == 90
+    assert STAGE2_SERVO_MAP["Scab_or_Canker"] == 90
+    assert STAGE2_SERVO_MAP["Rot_or_Blight"] == 90
+

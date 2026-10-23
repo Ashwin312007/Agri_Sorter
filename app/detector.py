@@ -645,21 +645,30 @@ class FruitDetector:
         v = hsv[:, :, 2]
         cr = ycrcb[:, :, 1]
         cb = ycrcb[:, :, 2]
+        b = crop[:, :, 0].astype(int)
+        g = crop[:, :, 1].astype(int)
+        r = crop[:, :, 2].astype(int)
 
         total_pixels = float(crop.shape[0] * crop.shape[1])
 
-        # Strong orange chromatic signature: H in [5, 25], S >= 80, V >= 90
-        orange_sig = (h >= 5) & (h <= 25) & (s >= 80) & (v >= 90)
+        # True orange fruit peel signature:
+        # 1. High saturation or carotenoid profile (vivid orange, indoor webcam)
+        carotenoid_orange = (h >= 5) & (h <= 25) & (v >= 80) & (
+            (s >= 140) | (cr >= 174) | (cb <= 80) | (b < 80)
+        )
+        # 2. Indoor lighting orange: balanced R-G vs G-B and Hue in [13, 25] or lower Cr (<= 152)
+        indoor_orange = (h >= 13) & (h <= 25) & (s >= 70) & (v >= 80) & (
+            (cr <= 152) | ((r - g) <= (g - b) + 15)
+        )
+        orange_sig = carotenoid_orange | indoor_orange
         orange_ratio = np.count_nonzero(orange_sig) / max(total_pixels, 1.0)
 
-        # If evaluating an orange candidate and orange pigment is present, do not suppress as skin
+        # If evaluating an orange candidate and genuine orange pigment is present, exempt from skin rejection
         if fruit_type == "orange" and orange_ratio >= 0.20:
             return False
 
-        # If solid orange fruit is tested without fruit_type (e.g. S >= 140 or carotenoid low-blue B < 80)
-        b_channel = crop[:, :, 0]
-        solid_orange = orange_sig & ((s >= 140) | (cb <= 85) | (cr >= 174) | (b_channel < 80))
-        if np.count_nonzero(solid_orange) / max(total_pixels, 1.0) >= 0.25:
+        # If solid orange fruit is tested without fruit_type hint
+        if orange_ratio >= 0.35:
             return False
 
         skin_ycrcb = (cr >= 133) & (cr <= 173) & (cb >= 77) & (cb <= 127)
@@ -673,7 +682,7 @@ class FruitDetector:
             (s >= 160)
             | ((h >= 25) & (h <= 88) & (s >= 35))
             | (((h <= 15) | (h >= 160)) & (s >= 115))
-            | solid_orange
+            | carotenoid_orange
         ) / max(total_pixels, 1.0)
 
         # If skin tone dominates and high-saturation fruit pigmentation is lacking, reject as skin

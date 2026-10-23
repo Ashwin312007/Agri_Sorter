@@ -82,3 +82,47 @@ def test_load_app_config_schema():
         "mango",
         "pomegranate",
     ]
+
+
+def test_unified_4class_model_outputs_and_actuation_contracts():
+    """Verify rebuilt 4-class unified model output mapping and actuation contracts.
+
+    Mapping:
+      Class 0 -> Healthy -> Actuation 0° (PASS)
+      Class 1 -> Bruise_or_Scratch -> Actuation 90° (REJECT)
+      Class 2 -> Scab_or_Canker -> Actuation 90° (REJECT)
+      Class 3 -> Rot_or_Blight -> Actuation 90° (REJECT)
+    """
+    cfg = load_app_config()
+    servo_cfg = cfg.get("hardware", {}).get("servo", {})
+    rest_angle = servo_cfg.get("rest_angle", 0.0)
+    reject_angle = servo_cfg.get("reject_angle", 90.0)
+
+    assert rest_angle == 0.0
+    assert reject_angle == 90.0
+
+    unified_classes = UNIFIED_DEFECT_CLASSES
+    assert len(unified_classes) == 4
+    assert unified_classes[0] == "Healthy"
+    assert unified_classes[1] == "Bruise_or_Scratch"
+    assert unified_classes[2] == "Scab_or_Canker"
+    assert unified_classes[3] == "Rot_or_Blight"
+
+    # Map class index to expected actuation angle
+    expected_angles = {
+        0: rest_angle,     # Healthy -> 0° PASS
+        1: reject_angle,   # Bruise_or_Scratch -> 90° REJECT
+        2: reject_angle,   # Scab_or_Canker -> 90° REJECT
+        3: reject_angle,   # Rot_or_Blight -> 90° REJECT
+    }
+
+    for idx, expected_angle in expected_angles.items():
+        class_name = unified_classes[idx]
+        if idx == 0:
+            assert is_fresh_class(class_name) is True
+            assert is_defect_class(class_name) is False
+            assert expected_angle == 0.0
+        else:
+            assert is_fresh_class(class_name) is False
+            assert is_defect_class(class_name) is True
+            assert expected_angle == 90.0

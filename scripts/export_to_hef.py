@@ -34,7 +34,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.contracts import COMPOUND_CLASSES
+from app.contracts import UNIFIED_DEFECT_CLASSES, COMPOUND_CLASSES
 
 logging.basicConfig(
     level=logging.INFO,
@@ -180,7 +180,7 @@ normalization1 = normalization([0.0, 0.0, 0.0], [255.0, 255.0, 255.0])
 # Hardware allocation configuration for Hailo-8L
 set_power_mode(ULTRA_PERFORMANCE)
 
-# Performance optimization allocation for 20 compound classes
+# Performance optimization allocation for 4 unified defect classes
 performance_param(compiler_optimization_level=max)
 """
     with open(alls_path, "w", encoding="utf-8") as f:
@@ -198,10 +198,10 @@ def generate_synthetic_calibration_images(
     h, w = imgsz
     images = np.zeros((count, h, w, 3), dtype=np.uint8)
 
-    # Fruit color palettes (BGR format): apple red, banana yellow, orange, mango greenish-red
+    # Fruit color palettes (BGR format): apple red, guava green, orange, mango greenish-red
     palettes = [
         (40, 40, 210),   # Apple Red
-        (30, 220, 230),  # Banana Yellow
+        (50, 200, 100),  # Guava Green
         (20, 140, 240),  # Orange
         (50, 180, 180),  # Mango
     ]
@@ -322,7 +322,7 @@ def create_simulated_hef(
 ) -> Path:
     """Create a simulated HEF container file with metadata header for environments without hailo_sdk."""
     if classes is None:
-        classes = list(COMPOUND_CLASSES)
+        classes = list(UNIFIED_DEFECT_CLASSES)
 
     hef_path = Path(hef_path).resolve()
     hef_path.parent.mkdir(parents=True, exist_ok=True)
@@ -423,8 +423,12 @@ def compile_to_hef(
     hef_path: Path,
     hw_arch: str = "hailo8l",
     model_name: str = "yolo11n_fruit",
+    classes: Optional[List[str]] = None,
 ) -> Path:
     """Compile ONNX model to Hailo HEF using Hailo Dataflow Compiler (or simulation fallback)."""
+    if classes is None:
+        classes = list(UNIFIED_DEFECT_CLASSES)
+
     onnx_path = Path(onnx_path).resolve()
     alls_path = Path(alls_path).resolve()
     hef_path = Path(hef_path).resolve()
@@ -487,7 +491,7 @@ def compile_to_hef(
         model_name=model_name,
         hw_arch=hw_arch,
         input_shape=(640, 640, 3),
-        classes=COMPOUND_CLASSES,
+        classes=classes,
     )
     generate_compilation_shell_script(
         script_path=hef_path.parent / "compile_hailo_hef.sh",
@@ -500,8 +504,8 @@ def compile_to_hef(
 
 
 def run_export_pipeline(
-    pt_model: Path = REPO_ROOT / "models" / "detector" / "yolo11n.pt",
-    onnx_model: Path = REPO_ROOT / "models" / "detector" / "yolo11n.onnx",
+    pt_model: Optional[Path] = None,
+    onnx_model: Optional[Path] = None,
     hef_output: Path = REPO_ROOT / "models" / "detector" / "yolo11n_fruit.hef",
     alls_output: Path = REPO_ROOT / "models" / "detector" / "yolo11n_fruit.alls",
     calib_dir: Optional[Path] = None,
@@ -509,10 +513,24 @@ def run_export_pipeline(
     hw_arch: str = "hailo8l",
     imgsz: int = 640,
     opset: int = 17,
+    classes: Optional[List[str]] = None,
 ) -> Dict[str, Path]:
     """Execute end-to-end export pipeline: PyTorch -> ONNX -> Hailo HEF."""
+    if classes is None:
+        classes = list(UNIFIED_DEFECT_CLASSES)
+
+    # Resolve default PyTorch model path (prefer yolo11n_fruit.pt, fall back to yolo11n.pt)
+    if pt_model is None:
+        cand_pt = REPO_ROOT / "models" / "detector" / "yolo11n_fruit.pt"
+        pt_model = cand_pt if cand_pt.is_file() else REPO_ROOT / "models" / "detector" / "yolo11n.pt"
     pt_model = Path(pt_model).resolve()
+
+    # Resolve default ONNX model path (prefer yolo11n_fruit.onnx, fall back to yolo11n.onnx)
+    if onnx_model is None:
+        cand_onnx = REPO_ROOT / "models" / "detector" / "yolo11n_fruit.onnx"
+        onnx_model = cand_onnx if cand_onnx.is_file() else REPO_ROOT / "models" / "detector" / "yolo11n.onnx"
     onnx_model = Path(onnx_model).resolve()
+
     hef_output = Path(hef_output).resolve()
     alls_output = Path(alls_output).resolve()
 
@@ -550,6 +568,7 @@ def run_export_pipeline(
         hef_path=hef_output,
         hw_arch=hw_arch,
         model_name="yolo11n_fruit",
+        classes=classes,
     )
 
     # 5. Write metadata companion JSON
@@ -559,8 +578,8 @@ def run_export_pipeline(
         "model_name": hef_output.stem,
         "hw_arch": hw_arch,
         "imgsz": imgsz,
-        "names": {i: name for i, name in enumerate(COMPOUND_CLASSES)},
-        "num_classes": len(COMPOUND_CLASSES),
+        "names": {i: name for i, name in enumerate(classes)},
+        "num_classes": len(classes),
         "hef_path": str(hef_output),
         "onnx_path": str(onnx_model),
     }
@@ -583,14 +602,14 @@ def main():
     parser.add_argument(
         "--pt-model",
         type=Path,
-        default=REPO_ROOT / "models" / "detector" / "yolo11n.pt",
-        help="Path to PyTorch (.pt) weights.",
+        default=None,
+        help="Path to PyTorch (.pt) weights (default: models/detector/yolo11n_fruit.pt or yolo11n.pt).",
     )
     parser.add_argument(
         "--onnx-model",
         type=Path,
-        default=REPO_ROOT / "models" / "detector" / "yolo11n.onnx",
-        help="Path to target static ONNX model.",
+        default=None,
+        help="Path to target static ONNX model (default: models/detector/yolo11n_fruit.onnx or yolo11n.onnx).",
     )
     parser.add_argument(
         "--hef-output",

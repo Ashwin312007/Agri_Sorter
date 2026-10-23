@@ -11,5 +11,5 @@ normalization1 = normalization([0.0, 0.0, 0.0], [255.0, 255.0, 255.0])
 # Hardware allocation configuration for Hailo-8L
 set_power_mode(ULTRA_PERFORMANCE)
 
-# Performance optimization allocation for 20 compound classes
+# Performance optimization allocation for 4 unified defect classes
 performance_param(compiler_optimization_level=max)

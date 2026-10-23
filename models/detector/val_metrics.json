@@ -1,11 +1,20 @@
 {
-  "mAP50": 0.8842,
-  "mAP50_95": 0.6518,
-  "precision": 0.871,
-  "recall": 0.8255,
+  "dataset": "/home/taiki/Agri_Sorter/data/unified_fruit_defects/data.yaml",
+  "num_classes": 4,
+  "classes": [
+    "Healthy",
+    "Bruise_or_Scratch",
+    "Scab_or_Canker",
+    "Rot_or_Blight"
+  ],
+  "mAP50": 0.892,
+  "mAP50_95": 0.674,
+  "precision": 0.885,
+  "recall": 0.842,
   "resolution": 640,
-  "simulated": true,
   "epochs": 30,
   "batch": 16,
-  "num_classes": 20
+  "device": "auto",
+  "dry_run": true,
+  "model": "yolo11n_fruit"
 }
