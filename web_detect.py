@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
-from detect import APPLE_CLASSES, is_defect, letterbox, load_names, open_cam, postprocess, preprocess
+from detect import APPLE_CLASSES, MANGO_CLASSES, is_defect, letterbox, load_names, open_cam, postprocess, preprocess
 
 running = True
 raw_frame_bytes = None
@@ -227,23 +227,43 @@ def start_server(port=5000):
 def main():
     global raw_frame_bytes, model_frame_bytes, running
 
-    model_path = "best.onnx"
-    conf_thresh = 0.25
-    iou_thresh = 0.45
-    cam_idx = 0
-    imgsz = 416
+    import argparse
+    parser = argparse.ArgumentParser(description="Dual-view Fruit Damage Detector Dashboard")
+    parser.add_argument("--model", default="best_mango.onnx" if os.path.exists("best_mango.onnx") else "best.onnx", help="Path to ONNX model")
+    parser.add_argument("--fruit", choices=["apple", "mango", "auto"], default="auto")
+    parser.add_argument("--conf", type=float, default=0.25)
+    parser.add_argument("--iou", type=float, default=0.45)
+    parser.add_argument("--cam", type=int, default=0)
+    parser.add_argument("--imgsz", type=int, default=416)
+    parser.add_argument("--port", type=int, default=5000)
+    args = parser.parse_args()
 
+    model_path = args.model
+    conf_thresh = args.conf
+    iou_thresh = args.iou
+    cam_idx = args.cam
+    imgsz = args.imgsz
+
+    expected = APPLE_CLASSES
     so = ort.SessionOptions()
     so.intra_op_num_threads = 4
     sess = ort.InferenceSession(model_path, so, providers=["CPUExecutionProvider"])
     inp_name = sess.get_inputs()[0].name
-    names = load_names(sess, None, APPLE_CLASSES)
 
-    server_thread = Thread(target=start_server, args=(5000,), daemon=True)
+    meta = sess.get_modelmeta().custom_metadata_map
+    if "names" in meta:
+        if "mango" in meta["names"]:
+            expected = MANGO_CLASSES
+        elif "apple" in meta["names"]:
+            expected = APPLE_CLASSES
+
+    names = load_names(sess, None, expected)
+
+    server_thread = Thread(target=start_server, args=(args.port,), daemon=True)
     server_thread.start()
-    print("Dual-stream server online at http://127.0.0.1:5000")
+    print(f"Dual-stream server online at http://127.0.0.1:{args.port} | Model: {model_path} | Classes: {names}")
 
-    webbrowser.open("http://127.0.0.1:5000")
+    webbrowser.open(f"http://127.0.0.1:{args.port}")
 
     cap = open_cam(cam_idx, 640, 480)
     if cap is None:

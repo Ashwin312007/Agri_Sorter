@@ -6,6 +6,7 @@ runs/
 *.onnx
 *.pt
 dataset_apple/
+dataset_mango/
 raw_downloads/
 detections.csv
 yolov5/

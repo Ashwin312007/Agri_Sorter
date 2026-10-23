@@ -193,5 +193,32 @@ class TestDatasetRemapping(unittest.TestCase):
         self.assertIsNone(remap_class("unknown_label"))
 
 
+class TestMangoDatasetRemapping(unittest.TestCase):
+    def test_mango_classes_definition(self):
+        import dataset_prep_mango
+        self.assertEqual(len(dataset_prep_mango.UNIFIED_CLASSES), 4)
+        self.assertEqual(dataset_prep_mango.UNIFIED_CLASSES, ["mango_fresh", "mango_rotten", "mango_bruised", "mango_damaged"])
+
+    def test_mango_remapping_rules(self):
+        import dataset_prep_mango
+        # 0: fresh
+        self.assertEqual(dataset_prep_mango.remap_class("Grade-A"), 0)
+        self.assertEqual(dataset_prep_mango.remap_class("green"), 0)
+        self.assertEqual(dataset_prep_mango.remap_class("ripe"), 0)
+
+        # 1: rotten
+        self.assertEqual(dataset_prep_mango.remap_class("Black Spot"), 1)
+        self.assertEqual(dataset_prep_mango.remap_class("rotten"), 1)
+        self.assertEqual(dataset_prep_mango.remap_class("Grade-C"), 1)
+
+        # 2: bruised
+        self.assertEqual(dataset_prep_mango.remap_class("Brown Spot"), 2)
+        self.assertEqual(dataset_prep_mango.remap_class("skin damage"), 2)
+        self.assertEqual(dataset_prep_mango.remap_class("Grade-B"), 2)
+
+        # 3: damaged
+        self.assertEqual(dataset_prep_mango.remap_class("Mango Scab"), 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -22,6 +22,11 @@ import numpy as np
 import onnxruntime as ort
 
 APPLE_CLASSES = ["apple_fresh", "apple_rotten", "apple_bruised", "apple_damaged"]
+MANGO_CLASSES = ["mango_fresh", "mango_rotten", "mango_bruised", "mango_damaged"]
+FRUIT_CLASSES = {
+    "apple": APPLE_CLASSES,
+    "mango": MANGO_CLASSES,
+}
 running = True
 
 
@@ -133,8 +138,9 @@ def is_defect(name):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", default="best.onnx")
-    ap.add_argument("--expect", default=",".join(APPLE_CLASSES),
-                    help="comma-separated expected class names (default: apple classes)")
+    ap.add_argument("--fruit", choices=["apple", "mango", "auto"], default="auto", help="target fruit (auto-detects from model metadata)")
+    ap.add_argument("--expect", default=None,
+                    help="comma-separated expected class names (overrides auto/fruit default)")
     ap.add_argument("--names", default=None, help="class names in model index order, if metadata is missing")
     ap.add_argument("--conf", type=float, default=0.25, help="confidence threshold (set to the Phase 4 value)")
     ap.add_argument("--iou", type=float, default=0.45)
@@ -149,12 +155,26 @@ def main():
     ap.add_argument("--csv", default="detections.csv")
     args = ap.parse_args()
 
-    expected = [n.strip() for n in args.expect.split(",") if n.strip()]
+    if args.expect:
+        expected = [n.strip() for n in args.expect.split(",") if n.strip()]
+    elif args.fruit in FRUIT_CLASSES:
+        expected = FRUIT_CLASSES[args.fruit]
+    else:
+        expected = APPLE_CLASSES
 
     so = ort.SessionOptions()
     so.intra_op_num_threads = args.threads
     sess = ort.InferenceSession(args.model, so, providers=["CPUExecutionProvider"])
     inp_name = sess.get_inputs()[0].name
+
+    if args.fruit == "auto" and not args.expect:
+        meta = sess.get_modelmeta().custom_metadata_map
+        if "names" in meta:
+            if "mango" in meta["names"]:
+                expected = MANGO_CLASSES
+            elif "apple" in meta["names"]:
+                expected = APPLE_CLASSES
+
     names = load_names(sess, args.names, expected)
     print(f"Model: {args.model} | classes: {names} | conf={args.conf} iou={args.iou}")
 

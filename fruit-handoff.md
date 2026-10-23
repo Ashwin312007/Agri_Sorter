@@ -1,4 +1,4 @@
-# Fruit Damage Detector - Handoff (APPLE COMPLETED, Ready for MANGO)
+# Fruit Damage Detector - Handoff (APPLE & MANGO COMPLETED, Ready for GUAVA)
 
 Use this file to continue the project in another tool. It lists what is done, what is verified, what is pending, and all current code.
 
@@ -16,12 +16,24 @@ Use this file to continue the project in another tool. It lists what is done, wh
 
 | Phase | Status |
 |---|---|
-| 0. Check workspace and recipes | Complete. Roboflow workspace: `ashwins-workspace-wsaqd`. |
-| 1. Dataset | Complete. RF-01 & RF-02 downloaded, remapped to 4 unified classes (620 images). |
-| 2. Version | Complete. 70/20/10 split (train: 434, val: 124, test: 62). |
-| 3. Train | Complete. Trained `yolov5n` (416x416, 100 epochs) on RTX 4060 GPU with CUDA 12.4. |
-| 4. Acceptance gate | Complete & PASSED. Overall mAP50 = 0.841 (>=0.70 gate), Recall = 0.825. |
-| 5. Raspberry Pi deployment | Deliverables complete on disk (`setup_pi.sh`, `check_env.py`, `detect.py`, `best.onnx`, `README.md`). Verified live on laptop at ~30 FPS. |
+| **APPLE** | **COMPLETED & VERIFIED**. mAP50 = 0.841, Recall = 0.825. ONNX: `best.onnx`. |
+| **MANGO** | **COMPLETED & VERIFIED**. mAP50 = 0.798, Precision = 0.825, Recall = 0.725. ONNX: `best_mango.onnx`. |
+| **GUAVA** | Next fruit. Datasets RF-04, RF-05, RF-06 in `Fruit_Defect_YOLO_Datasets_Verified.xlsx`. |
+| **POMEGRANATE** | Pending. |
+
+### Mango Metrics Summary
+- **Datasets**: RF-07 (178), RF-08 (900), RF-09 (56). Total: 4,017 images (18,640 annotations).
+- **Split**: Train 2,811, Val 803, Test 403.
+- **Model**: YOLOv5n 416x416 trained on RTX 4060 GPU.
+- **Metrics (803 val images)**:
+  - Overall Precision: 0.825
+  - Overall Recall: 0.725 (>=0.70 gate)
+  - Overall mAP50: 0.798 (>=0.70 gate)
+  - `mango_fresh`: mAP50 = 0.888, Recall = 0.815
+  - `mango_bruised`: mAP50 = 0.815, Recall = 0.772
+  - `mango_damaged`: mAP50 = 0.857, Recall = 0.800
+  - `mango_rotten`: mAP50 = 0.631, Precision = 0.867
+- **Deliverables**: [`best_mango.onnx`](file:///E:/Agri_Sorter/best_mango.onnx), [`dataset_prep_mango.py`](file:///E:/Agri_Sorter/dataset_prep_mango.py), [`download_mango.py`](file:///E:/Agri_Sorter/download_mango.py).
 
 ## 3. Phase 0 results (verified)
 
