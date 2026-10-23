@@ -57,8 +57,10 @@ def load_names(sess, cli_names, expected):
 
 
 def open_cam(idx, w, h):
-    api = cv2.CAP_V4L2 if hasattr(cv2, "CAP_V4L2") and os.name == "posix" else cv2.CAP_ANY
+    api = cv2.CAP_V4L2 if hasattr(cv2, "CAP_V4L2") and os.name == "posix" else (cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY)
     cap = cv2.VideoCapture(idx, api)
+    if not cap.isOpened() and os.name == "nt":
+        cap = cv2.VideoCapture(idx, cv2.CAP_ANY)
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
@@ -121,7 +123,7 @@ def postprocess(out, names, r, pad, orig_hw, conf_t, iou_t):
 
 
 def can_display():
-    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY") or os.name == "nt")
 
 
 def is_defect(name):
