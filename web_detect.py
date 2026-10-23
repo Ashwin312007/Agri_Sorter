@@ -24,6 +24,8 @@ from detect import APPLE_CLASSES, MANGO_CLASSES, is_defect, letterbox, load_name
 running = True
 raw_frame_bytes = None
 model_frame_bytes = None
+active_fruit_name = "Mango"
+active_classes = ["mango_fresh", "mango_rotten", "mango_bruised", "mango_damaged"]
 latest_stats = {
     "fps": 0.0,
     "verdict": "FRESH",
@@ -48,13 +50,17 @@ class DualStreamHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
-            html = """<!DOCTYPE html>
+            classes_html = " ".join([
+                f'<div><span class="{"badge-fresh" if not is_defect(c) else "badge-defect"}">{c}</span></div>'
+                for c in active_classes
+            ])
+            html = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>Apple Defect Detector - Live Dual View</title>
+    <title>{active_fruit_name} Defect Detector - Live Dual View</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
             background: #0f1117;
             color: #e0e0e0;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -62,8 +68,8 @@ class DualStreamHandler(BaseHTTPRequestHandler):
             display: flex;
             flex-direction: column;
             align-items: center;
-        }
-        header {
+        }}
+        header {{
             width: 100%;
             max-width: 1300px;
             display: flex;
@@ -72,17 +78,17 @@ class DualStreamHandler(BaseHTTPRequestHandler):
             padding-bottom: 15px;
             border-bottom: 1px solid #2d3342;
             margin-bottom: 20px;
-        }
-        h1 { font-size: 1.6rem; color: #4ade80; }
-        .meta { font-size: 0.9rem; color: #94a3b8; }
-        .grid {
+        }}
+        h1 {{ font-size: 1.6rem; color: #4ade80; }}
+        .meta {{ font-size: 0.9rem; color: #94a3b8; }}
+        .grid {{
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
             width: 100%;
             max-width: 1300px;
-        }
-        .card {
+        }}
+        .card {{
             background: #1e2433;
             border-radius: 12px;
             overflow: hidden;
@@ -90,8 +96,8 @@ class DualStreamHandler(BaseHTTPRequestHandler):
             box-shadow: 0 8px 24px rgba(0,0,0,0.4);
             display: flex;
             flex-direction: column;
-        }
-        .card-header {
+        }}
+        .card-header {{
             padding: 12px 16px;
             font-weight: 600;
             background: #181d29;
@@ -99,21 +105,21 @@ class DualStreamHandler(BaseHTTPRequestHandler):
             display: flex;
             justify-content: space-between;
             align-items: center;
-        }
-        .stream-view {
+        }}
+        .stream-view {{
             width: 100%;
             aspect-ratio: 4 / 3;
             background: #000;
             display: flex;
             align-items: center;
             justify-content: center;
-        }
-        .stream-view img {
+        }}
+        .stream-view img {{
             width: 100%;
             height: 100%;
             object-fit: contain;
-        }
-        .classes-bar {
+        }}
+        .classes-bar {{
             margin-top: 20px;
             width: 100%;
             max-width: 1300px;
@@ -121,18 +127,18 @@ class DualStreamHandler(BaseHTTPRequestHandler):
             background: #1e2433;
             border-radius: 8px;
             border: 1px solid #334155;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
             display: flex;
             justify-content: space-around;
-        }
-        .badge-fresh { color: #4ade80; font-weight: bold; }
-        .badge-defect { color: #f87171; font-weight: bold; }
+        }}
+        .badge-fresh {{ color: #4ade80; font-weight: bold; }}
+        .badge-defect {{ color: #f87171; font-weight: bold; }}
     </style>
 </head>
 <body>
     <header>
         <div>
-            <h1>Apple Damage Detector</h1>
+            <h1>{active_fruit_name} Damage Detector</h1>
             <div class="meta">YOLOv5 ONNX Edge Engine | Raspberry Pi 4 Target</div>
         </div>
         <div class="meta">
@@ -163,13 +169,11 @@ class DualStreamHandler(BaseHTTPRequestHandler):
     </div>
 
     <div class="classes-bar">
-        <div><span class="badge-fresh">apple_fresh</span>: Clean healthy fruit</div>
-        <div><span class="badge-defect">apple_rotten</span>: Fungal decomposition</div>
-        <div><span class="badge-defect">apple_bruised</span>: Impact contusion</div>
-        <div><span class="badge-defect">apple_damaged</span>: Skin lesions & punctures</div>
+        {classes_html}
     </div>
 </body>
 </html>"""
+            self.wfile.write(html.encode("utf-8"))
             self.wfile.write(html.encode("utf-8"))
 
         elif self.path == "/video_raw":
@@ -250,12 +254,17 @@ def main():
     sess = ort.InferenceSession(model_path, so, providers=["CPUExecutionProvider"])
     inp_name = sess.get_inputs()[0].name
 
+    global active_fruit_name, active_classes
     meta = sess.get_modelmeta().custom_metadata_map
     if "names" in meta:
         if "mango" in meta["names"]:
             expected = MANGO_CLASSES
+            active_fruit_name = "Mango"
+            active_classes = MANGO_CLASSES
         elif "apple" in meta["names"]:
             expected = APPLE_CLASSES
+            active_fruit_name = "Apple"
+            active_classes = APPLE_CLASSES
 
     names = load_names(sess, None, expected)
 
