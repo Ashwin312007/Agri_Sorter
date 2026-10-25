@@ -1,0 +1,10 @@
+path: E:\Agri_Sorter\dataset_guava
+train: images/train
+val: images/val
+test: images/test
+nc: 4
+names:
+- guava_fresh
+- guava_rotten
+- guava_bruised
+- guava_damaged

@@ -18,6 +18,8 @@ import numpy as np
 # Import functions from detect.py
 from detect import (
     APPLE_CLASSES,
+    GUAVA_CLASSES,
+    MANGO_CLASSES,
     is_defect,
     letterbox,
     load_names,
@@ -115,11 +117,15 @@ class TestVerdictLogic(unittest.TestCase):
         # FRESH verdicts
         self.assertFalse(is_defect("apple_fresh"))
         self.assertFalse(is_defect("mango_fresh"))
+        self.assertFalse(is_defect("guava_fresh"))
 
         # DEFECT verdicts
         self.assertTrue(is_defect("apple_rotten"))
         self.assertTrue(is_defect("apple_bruised"))
         self.assertTrue(is_defect("apple_damaged"))
+        self.assertTrue(is_defect("guava_rotten"))
+        self.assertTrue(is_defect("guava_bruised"))
+        self.assertTrue(is_defect("guava_damaged"))
         self.assertTrue(is_defect("crack"))
 
 
@@ -218,6 +224,38 @@ class TestMangoDatasetRemapping(unittest.TestCase):
 
         # 3: damaged
         self.assertEqual(dataset_prep_mango.remap_class("Mango Scab"), 3)
+
+
+class TestGuavaDatasetRemapping(unittest.TestCase):
+    def test_guava_classes_definition(self):
+        import dataset_prep_guava
+        self.assertEqual(len(dataset_prep_guava.UNIFIED_CLASSES), 4)
+        self.assertEqual(
+            dataset_prep_guava.UNIFIED_CLASSES,
+            ["guava_fresh", "guava_rotten", "guava_bruised", "guava_damaged"],
+        )
+
+    def test_guava_remapping_rules(self):
+        import dataset_prep_guava
+        # 0: fresh
+        self.assertEqual(dataset_prep_guava.remap_class("healthy"), 0)
+        self.assertEqual(dataset_prep_guava.remap_class("fresh"), 0)
+
+        # 1: rotten
+        self.assertEqual(dataset_prep_guava.remap_class("Phytopthora"), 1)
+        self.assertEqual(dataset_prep_guava.remap_class("Styler and Root"), 1)
+        self.assertEqual(dataset_prep_guava.remap_class("Anthracnose"), 1)
+        self.assertEqual(dataset_prep_guava.remap_class("fruit fly"), 1)
+
+        # 2: bruised
+        self.assertEqual(dataset_prep_guava.remap_class("Brown Spot"), 2)
+        self.assertEqual(dataset_prep_guava.remap_class("surface abrasion"), 2)
+        self.assertEqual(dataset_prep_guava.remap_class("blemish"), 2)
+
+        # 3: damaged
+        self.assertEqual(dataset_prep_guava.remap_class("Scab"), 3)
+        self.assertEqual(dataset_prep_guava.remap_class("scab"), 3)
+        self.assertEqual(dataset_prep_guava.remap_class("damaged"), 3)
 
 
 if __name__ == "__main__":

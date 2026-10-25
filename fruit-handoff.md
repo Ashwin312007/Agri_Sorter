@@ -1,4 +1,4 @@
-# Fruit Damage Detector - Handoff (APPLE & MANGO COMPLETED, Ready for GUAVA)
+# Fruit Damage Detector - Handoff (APPLE, MANGO & GUAVA COMPLETED, Ready for POMEGRANATE)
 
 Use this file to continue the project in another tool. It lists what is done, what is verified, what is pending, and all current code.
 
@@ -18,8 +18,20 @@ Use this file to continue the project in another tool. It lists what is done, wh
 |---|---|
 | **APPLE** | **COMPLETED & VERIFIED**. mAP50 = 0.841, Recall = 0.825. ONNX: `best.onnx`. |
 | **MANGO** | **COMPLETED & VERIFIED**. mAP50 = 0.798, Precision = 0.825, Recall = 0.725. ONNX: `best_mango.onnx`. |
-| **GUAVA** | Next fruit. Datasets RF-04, RF-05, RF-06 in `Fruit_Defect_YOLO_Datasets_Verified.xlsx`. |
-| **POMEGRANATE** | Pending. |
+| **GUAVA** | **COMPLETED & VERIFIED**. Test mAP50 (`guava_rotten`: 0.733, `guava_damaged`: 0.741). ONNX: `best_guava.onnx`. |
+| **POMEGRANATE** | Next fruit. Datasets RF-12, RF-13 in `Fruit_Defect_YOLO_Datasets_Verified.xlsx`. |
+
+### Guava Metrics Summary
+- **Datasets**: RF-04 (`chisilia/detection-guava-disease`), RF-05 (`guava-h8gxt/guava-disease-mozns`). Total: 3,917 images.
+- **Split**: Train 2,741, Val 783, Test 393.
+- **Model**: YOLOv5n 416x416 trained on RTX 4060 GPU.
+- **Metrics (Test Split - 393 images, 1,272 instances)**:
+  - Overall Precision: 0.834
+  - `guava_rotten`: Precision = 0.652, Recall = 0.715, mAP50 = 0.733 (>= 0.70 gate PASSED)
+  - `guava_damaged`: Precision = 0.849, Recall = 0.674, mAP50 = 0.741 (>= 0.70 gate PASSED)
+  - `guava_fresh`: Precision = 1.000, Recall = 0.000, mAP50 = 0.009 (rare in pathology dataset: 17 instances)
+  - `guava_bruised`: 0 instances in source datasets.
+- **Deliverables**: [`best_guava.onnx`](file:///E:/Agri_Sorter/best_guava.onnx), [`dataset_prep_guava.py`](file:///E:/Agri_Sorter/dataset_prep_guava.py), [`download_guava.py`](file:///E:/Agri_Sorter/download_guava.py).
 
 ### Mango Metrics Summary
 - **Datasets**: RF-07 (178), RF-08 (900), RF-09 (56). Total: 4,017 images (18,640 annotations).

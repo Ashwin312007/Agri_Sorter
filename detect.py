@@ -23,9 +23,11 @@ import onnxruntime as ort
 
 APPLE_CLASSES = ["apple_fresh", "apple_rotten", "apple_bruised", "apple_damaged"]
 MANGO_CLASSES = ["mango_fresh", "mango_rotten", "mango_bruised", "mango_damaged"]
+GUAVA_CLASSES = ["guava_fresh", "guava_rotten", "guava_bruised", "guava_damaged"]
 FRUIT_CLASSES = {
     "apple": APPLE_CLASSES,
     "mango": MANGO_CLASSES,
+    "guava": GUAVA_CLASSES,
 }
 running = True
 
@@ -138,7 +140,7 @@ def is_defect(name):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", default="best.onnx")
-    ap.add_argument("--fruit", choices=["apple", "mango", "auto"], default="auto", help="target fruit (auto-detects from model metadata)")
+    ap.add_argument("--fruit", choices=["apple", "mango", "guava", "auto"], default="auto", help="target fruit (auto-detects from model metadata)")
     ap.add_argument("--expect", default=None,
                     help="comma-separated expected class names (overrides auto/fruit default)")
     ap.add_argument("--names", default=None, help="class names in model index order, if metadata is missing")
@@ -172,6 +174,8 @@ def main():
         if "names" in meta:
             if "mango" in meta["names"]:
                 expected = MANGO_CLASSES
+            elif "guava" in meta["names"]:
+                expected = GUAVA_CLASSES
             elif "apple" in meta["names"]:
                 expected = APPLE_CLASSES
 

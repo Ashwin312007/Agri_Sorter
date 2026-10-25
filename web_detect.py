@@ -22,7 +22,17 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
-from detect import APPLE_CLASSES, MANGO_CLASSES, is_defect, letterbox, load_names, open_cam, postprocess, preprocess
+from detect import (
+    APPLE_CLASSES,
+    GUAVA_CLASSES,
+    MANGO_CLASSES,
+    is_defect,
+    letterbox,
+    load_names,
+    open_cam,
+    postprocess,
+    preprocess,
+)
 
 running = True
 raw_frame_bytes = None
@@ -48,6 +58,10 @@ def load_model(fruit_name: str):
             m_path = "best_mango.onnx"
             exp = MANGO_CLASSES
             c_thresh = 0.10
+        elif fruit_name == "guava":
+            m_path = "best_guava.onnx"
+            exp = GUAVA_CLASSES
+            c_thresh = 0.15
         else:
             m_path = "best.onnx"
             exp = APPLE_CLASSES
@@ -250,6 +264,7 @@ class DualStreamHandler(BaseHTTPRequestHandler):
         <div class="btn-group">
             <button class="btn {'btn-active' if active_fruit == 'mango' else ''}" onclick="switchFruit('mango')">🥭 MANGO</button>
             <button class="btn {'btn-active' if active_fruit == 'apple' else ''}" onclick="switchFruit('apple')">🍎 APPLE</button>
+            <button class="btn {'btn-active' if active_fruit == 'guava' else ''}" onclick="switchFruit('guava')">🍈 GUAVA</button>
         </div>
 
         <div class="slider-group">
@@ -372,7 +387,12 @@ def start_server(port=5000):
 def main():
     global raw_frame_bytes, model_frame_bytes, running
 
-    load_model("mango")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fruit", default="guava", choices=["apple", "mango", "guava"], help="Default active fruit")
+    args, _ = parser.parse_known_args()
+
+    load_model(args.fruit)
 
     server_thread = Thread(target=start_server, args=(5000,), daemon=True)
     server_thread.start()
