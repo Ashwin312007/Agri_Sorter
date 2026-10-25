@@ -3,7 +3,6 @@ __pycache__/
 *.py[cod]
 saved/
 runs/
-*.onnx
 *.pt
 dataset_apple/
 dataset_mango/
