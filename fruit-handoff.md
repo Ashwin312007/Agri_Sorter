@@ -22,16 +22,22 @@ Use this file to continue the project in another tool. It lists what is done, wh
 | **POMEGRANATE** | Next fruit. Datasets RF-12, RF-13 in `Fruit_Defect_YOLO_Datasets_Verified.xlsx`. |
 
 ### Guava Metrics Summary
-- **Datasets**: RF-04 (`chisilia/detection-guava-disease`), RF-05 (`guava-h8gxt/guava-disease-mozns`). Total: 3,917 images.
-- **Split**: Train 2,741, Val 783, Test 393.
-- **Model**: YOLOv5n 416x416 trained on RTX 4060 GPU.
-- **Metrics (Test Split - 393 images, 1,272 instances)**:
-  - Overall Precision: 0.834
-  - `guava_rotten`: Precision = 0.652, Recall = 0.715, mAP50 = 0.733 (>= 0.70 gate PASSED)
-  - `guava_damaged`: Precision = 0.849, Recall = 0.674, mAP50 = 0.741 (>= 0.70 gate PASSED)
-  - `guava_fresh`: Precision = 1.000, Recall = 0.000, mAP50 = 0.009 (rare in pathology dataset: 17 instances)
-  - `guava_bruised`: 0 instances in source datasets.
-- **Deliverables**: [`best_guava.onnx`](file:///E:/Agri_Sorter/best_guava.onnx), [`dataset_prep_guava.py`](file:///E:/Agri_Sorter/dataset_prep_guava.py), [`download_guava.py`](file:///E:/Agri_Sorter/download_guava.py).
+- **Datasets**: RF-04 (`chisilia/detection-guava-disease`), RF-05 (`guava-h8gxt/guava-disease-mozns` with polygon envelope fix), and `waleed-anis/yolo-v8-fruits-detection` (898 fresh guava images). Total: 2,786 balanced images.
+- **Split**: Train 1,950, Val 557, Test 279.
+- **Model**: YOLOv5n 416x416 trained 50 epochs on RTX 4060 GPU.
+- **Metrics (Validation Split - 557 images, 1,304 instances)**:
+  - Overall Precision: 0.802
+  - Overall Recall: 0.816 (>= 0.70 gate PASSED)
+  - Overall mAP50: 0.820 (>= 0.70 gate PASSED)
+  - `guava_fresh`: Precision = 0.987, Recall = 1.000, mAP50 = 0.995
+  - `guava_rotten`: Precision = 0.640, Recall = 0.703, mAP50 = 0.718
+  - `guava_damaged`: Precision = 0.778, Recall = 0.746, mAP50 = 0.746
+- **Metrics (Test Split - 279 images, 662 instances)**:
+  - Overall mAP50: 0.825, Recall: 0.806, Precision: 0.796
+  - `guava_fresh`: mAP50 = 0.995, Recall = 1.000, Precision = 0.984
+  - `guava_damaged`: mAP50 = 0.818, Recall = 0.737, Precision = 0.849
+  - `guava_rotten`: mAP50 = 0.662, Recall = 0.680, Precision = 0.556
+- **Deliverables**: [`best_guava.onnx`](file:///E:/Agri_Sorter/best_guava.onnx), [`dataset_prep_guava.py`](file:///E:/Agri_Sorter/dataset_prep_guava.py).
 
 ### Mango Metrics Summary
 - **Datasets**: RF-07 (178), RF-08 (900), RF-09 (56). Total: 4,017 images (18,640 annotations).
