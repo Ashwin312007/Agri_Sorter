@@ -1,0 +1,21 @@
+[Unit]
+Description=Agricultural Multi-Fruit Damage Sorting Engine
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/fruit_sorter
+ExecStart=/home/pi/fruit-venv/bin/python3 web_detect.py --fruit pomegranate
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+KillSignal=SIGINT
+
+# Resource limits suited for Raspberry Pi 4
+Nice=-5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

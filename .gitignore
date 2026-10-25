@@ -7,6 +7,10 @@ runs/
 *.pt
 dataset_apple/
 dataset_mango/
+dataset_guava/
+dataset_pomegranate/
+deploy_rpi4/
+*.zip
 raw_downloads/
 detections.csv
 yolov5/

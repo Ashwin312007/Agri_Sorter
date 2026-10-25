@@ -139,10 +139,45 @@ def is_defect(name):
     return not name.endswith("_fresh")
 
 
+DEFAULT_FRUIT_MODELS = {
+    "apple": "best.onnx",
+    "mango": "best_mango.onnx",
+    "guava": "best_guava.onnx",
+    "pomegranate": "best_pomegranate.onnx",
+}
+
+
+class GPIOTrigger:
+    """Non-blocking hardware reject trigger for Raspberry Pi GPIO relays / solenoids."""
+    def __init__(self, pin=None, pulse_s=0.2):
+        self.pin = pin
+        self.pulse_s = pulse_s
+        self.device = None
+        if pin is not None:
+            try:
+                from gpiozero import OutputDevice
+                self.device = OutputDevice(pin, active_high=True, initial_value=False)
+                print(f"[GPIO] Reject actuator enabled on BCM pin {pin} (gpiozero).")
+            except Exception as e:
+                print(f"[GPIO] Hardware actuation unavailable ({e}). Running in logging mode.")
+
+    def trigger(self):
+        if self.device is not None:
+            import threading
+            def _pulse():
+                try:
+                    self.device.on()
+                    time.sleep(self.pulse_s)
+                    self.device.off()
+                except Exception as ex:
+                    print(f"[GPIO Warning] Actuation error: {ex}")
+            threading.Thread(target=_pulse, daemon=True).start()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", default="best.onnx")
-    ap.add_argument("--fruit", choices=["apple", "mango", "guava", "auto"], default="auto", help="target fruit (auto-detects from model metadata)")
+    ap.add_argument("--fruit", choices=["apple", "mango", "guava", "pomegranate", "auto"], default="auto", help="target fruit (auto-detects from model metadata)")
     ap.add_argument("--expect", default=None,
                     help="comma-separated expected class names (overrides auto/fruit default)")
     ap.add_argument("--names", default=None, help="class names in model index order, if metadata is missing")
@@ -154,10 +189,18 @@ def main():
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--imgsz", type=int, default=416)
     ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--gpio-pin", type=int, default=None, help="BCM GPIO pin for reject relay/solenoid actuation")
+    ap.add_argument("--gpio-pulse", type=float, default=0.2, help="Pulse duration in seconds for reject trigger")
     ap.add_argument("--headless", action="store_true", help="never open a window")
     ap.add_argument("--save", action="store_true", help="save annotated REJECT frames to saved/")
     ap.add_argument("--csv", default="detections.csv")
     args = ap.parse_args()
+
+    # Auto-resolve model if fruit explicitly given
+    if args.fruit in DEFAULT_FRUIT_MODELS and args.model == "best.onnx" and args.fruit != "apple":
+        resolved_model = DEFAULT_FRUIT_MODELS[args.fruit]
+        if os.path.exists(resolved_model):
+            args.model = resolved_model
 
     if args.expect:
         expected = [n.strip() for n in args.expect.split(",") if n.strip()]
@@ -174,7 +217,9 @@ def main():
     if args.fruit == "auto" and not args.expect:
         meta = sess.get_modelmeta().custom_metadata_map
         if "names" in meta:
-            if "mango" in meta["names"]:
+            if "pomegranate" in meta["names"]:
+                expected = POMEGRANATE_CLASSES
+            elif "mango" in meta["names"]:
                 expected = MANGO_CLASSES
             elif "guava" in meta["names"]:
                 expected = GUAVA_CLASSES
@@ -182,6 +227,7 @@ def main():
                 expected = APPLE_CLASSES
 
     names = load_names(sess, args.names, expected)
+    gpio = GPIOTrigger(args.gpio_pin, args.gpio_pulse)
     print(f"Model: {args.model} | classes: {names} | conf={args.conf} iou={args.iou}")
 
     show = (not args.headless) and can_display()
@@ -215,6 +261,8 @@ def main():
             out = sess.run(None, {inp_name: preprocess(lb)})[0]
             dets = postprocess(out, names, r, pad, frame.shape[:2], args.conf, args.iou)
             verdict = "REJECT" if any(is_defect(d["name"]) for d in dets) else "FRESH"
+            if verdict == "REJECT" and any(is_defect(d["name"]) for d in dets):
+                gpio.trigger()
             ts = datetime.now().isoformat(timespec="milliseconds")
             if dets:
                 for d in dets:
@@ -265,6 +313,8 @@ def main():
             dets = postprocess(out, names, r, pad, frame.shape[:2], args.conf, args.iou)
 
             verdict = "REJECT" if any(is_defect(d["name"]) for d in dets) else "FRESH"
+            if verdict == "REJECT" and any(is_defect(d["name"]) for d in dets):
+                gpio.trigger()
 
             times.append(time.perf_counter())
             fps = (len(times) - 1) / (times[-1] - times[0]) if len(times) > 1 else 0.0
