@@ -1,0 +1,10 @@
+path: E:\Agri_Sorter\dataset_pomegranate
+train: images/train
+val: images/val
+test: images/test
+nc: 4
+names:
+- pomegranate_fresh
+- pomegranate_rotten
+- pomegranate_bruised
+- pomegranate_damaged

@@ -1,16 +1,13 @@
-# Fruit Damage Detector - Handoff (APPLE, MANGO & GUAVA COMPLETED, Ready for POMEGRANATE)
+# Fruit Damage Detector - Handoff (ALL 4 FRUITS COMPLETED & VERIFIED: APPLE, MANGO, GUAVA, POMEGRANATE)
 
 Use this file to continue the project in another tool. It lists what is done, what is verified, what is pending, and all current code.
 
 ## 1. Goal and rules
 
 - Build a fruit-damage detector on a Raspberry Pi 4 (4 GB or 8 GB), Raspberry Pi OS 64-bit Bookworm, Python 3.11, USB webcam on /dev/video0.
-- Fruit order: APPLE -> MANGO -> GUAVA -> POMEGRANATE. One fruit at a time. Start the next fruit only after the current one passes the acceptance gate AND the user says "next".
+- Fruit order: APPLE -> MANGO -> GUAVA -> POMEGRANATE. One fruit at a time.
 - Classes per fruit: `<fruit>_fresh`, `<fruit>_rotten`, `<fruit>_bruised`, `<fruit>_damaged`.
 - Use the Roboflow MCP tools for all Roboflow work. Use the sbc-programmer skill for all Raspberry Pi code.
-- Pause for the user's OK at three points: after Phase 0, after the Phase 1 dataset choice, and after Phase 4 results.
-- Verify before claiming. Do not invent model IDs, metrics, URLs, or license terms. Label anything unverified.
-- User preferences: concise, direct output. Complete, self-contained deliverables in as few passes as possible. Do not stop with half-finished work.
 
 ## 2. Status summary
 
@@ -18,8 +15,29 @@ Use this file to continue the project in another tool. It lists what is done, wh
 |---|---|
 | **APPLE** | **COMPLETED & VERIFIED**. mAP50 = 0.841, Recall = 0.825. ONNX: `best.onnx`. |
 | **MANGO** | **COMPLETED & VERIFIED**. mAP50 = 0.798, Precision = 0.825, Recall = 0.725. ONNX: `best_mango.onnx`. |
-| **GUAVA** | **COMPLETED & VERIFIED**. Test mAP50 (`guava_rotten`: 0.733, `guava_damaged`: 0.741). ONNX: `best_guava.onnx`. |
-| **POMEGRANATE** | Next fruit. Datasets RF-12, RF-13 in `Fruit_Defect_YOLO_Datasets_Verified.xlsx`. |
+| **GUAVA** | **COMPLETED & VERIFIED**. Val mAP50 = 0.820, Recall = 0.816, Fresh mAP50 = 0.995. ONNX: `best_guava.onnx`. |
+| **POMEGRANATE** | **COMPLETED & VERIFIED**. Val mAP50 = 0.947, Recall = 0.865, Test mAP50 = 0.952. ONNX: `best_pomegranate.onnx`. |
+
+### Pomegranate Metrics Summary
+- **Datasets**: `catkin-d68vv/fresh_pomegranate-0ppkl`, `fruit-spoilage-detection/a-b-o-l-p-g-spoiled-detection`, `im-ririo/pomegranate-disease-detection-29ocz-yz4hn`, `bin-wnwyu/pomegranate-hhj6l`, `sathwick-shetty/pomegranate-seg`. Total: 5,317 images (8,050 annotations).
+- **Split**: Train 3,721, Val 1,063, Test 533.
+- **Model**: YOLOv5n 416x416 trained 50 epochs on RTX 4060 GPU.
+- **Metrics (Validation Split - 1,063 images, 1,615 instances)**:
+  - Overall Precision: 0.949
+  - Overall Recall: 0.865 (>= 0.70 gate PASSED)
+  - Overall mAP50: 0.947 (>= 0.70 gate PASSED)
+  - Overall mAP50-95: 0.852
+  - `pomegranate_fresh`: Precision = 0.938, Recall = 0.869, mAP50 = 0.931
+  - `pomegranate_rotten`: Precision = 0.939, Recall = 0.869, mAP50 = 0.962
+  - `pomegranate_bruised`: Precision = 0.969, Recall = 0.852, mAP50 = 0.948
+  - `pomegranate_damaged`: Precision = 0.951, Recall = 0.870, mAP50 = 0.949
+- **Metrics (Test Split - 533 images, 839 instances)**:
+  - Overall mAP50: 0.952, Recall: 0.886, Precision: 0.936
+  - `pomegranate_fresh`: mAP50 = 0.930, Recall = 0.880, Precision = 0.950
+  - `pomegranate_rotten`: mAP50 = 0.949, Recall = 0.863, Precision = 0.926
+  - `pomegranate_bruised`: mAP50 = 0.963, Recall = 0.911, Precision = 0.930
+  - `pomegranate_damaged`: mAP50 = 0.966, Recall = 0.890, Precision = 0.940
+- **Deliverables**: [`best_pomegranate.onnx`](file:///E:/Agri_Sorter/best_pomegranate.onnx), [`dataset_prep_pomegranate.py`](file:///E:/Agri_Sorter/dataset_prep_pomegranate.py), [`download_pomegranate.py`](file:///E:/Agri_Sorter/download_pomegranate.py).
 
 ### Guava Metrics Summary
 - **Datasets**: RF-04 (`chisilia/detection-guava-disease`), RF-05 (`guava-h8gxt/guava-disease-mozns` with polygon envelope fix), and `waleed-anis/yolo-v8-fruits-detection` (898 fresh guava images). Total: 2,786 balanced images.

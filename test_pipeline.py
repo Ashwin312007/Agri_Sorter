@@ -258,5 +258,35 @@ class TestGuavaDatasetRemapping(unittest.TestCase):
         self.assertEqual(dataset_prep_guava.remap_class("damaged"), 3)
 
 
+class TestPomegranateDatasetRemapping(unittest.TestCase):
+    def test_pomegranate_classes_definition(self):
+        import dataset_prep_pomegranate
+        self.assertEqual(len(dataset_prep_pomegranate.UNIFIED_CLASSES), 4)
+        self.assertEqual(
+            dataset_prep_pomegranate.UNIFIED_CLASSES,
+            ["pomegranate_fresh", "pomegranate_rotten", "pomegranate_bruised", "pomegranate_damaged"],
+        )
+
+    def test_pomegranate_remapping_rules(self):
+        import dataset_prep_pomegranate
+        # 0: fresh
+        self.assertEqual(dataset_prep_pomegranate.remap_class("healthy"), 0)
+        self.assertEqual(dataset_prep_pomegranate.remap_class("Fresh Pomegranate"), 0)
+        self.assertEqual(dataset_prep_pomegranate.remap_class("freshpomegranate"), 0)
+
+        # 1: rotten
+        self.assertEqual(dataset_prep_pomegranate.remap_class("Alternaria"), 1)
+        self.assertEqual(dataset_prep_pomegranate.remap_class("Anthracnose"), 1)
+        self.assertEqual(dataset_prep_pomegranate.remap_class("Spoiled Pomegranate"), 1)
+
+        # 2: bruised
+        self.assertEqual(dataset_prep_pomegranate.remap_class("Cercospora"), 2)
+        self.assertEqual(dataset_prep_pomegranate.remap_class("surface lesions"), 2)
+
+        # 3: damaged
+        self.assertEqual(dataset_prep_pomegranate.remap_class("Bacterial_Blight"), 3)
+        self.assertEqual(dataset_prep_pomegranate.remap_class("cracks"), 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

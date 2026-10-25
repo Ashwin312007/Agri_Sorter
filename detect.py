@@ -24,10 +24,12 @@ import onnxruntime as ort
 APPLE_CLASSES = ["apple_fresh", "apple_rotten", "apple_bruised", "apple_damaged"]
 MANGO_CLASSES = ["mango_fresh", "mango_rotten", "mango_bruised", "mango_damaged"]
 GUAVA_CLASSES = ["guava_fresh", "guava_rotten", "guava_bruised", "guava_damaged"]
+POMEGRANATE_CLASSES = ["pomegranate_fresh", "pomegranate_rotten", "pomegranate_bruised", "pomegranate_damaged"]
 FRUIT_CLASSES = {
     "apple": APPLE_CLASSES,
     "mango": MANGO_CLASSES,
     "guava": GUAVA_CLASSES,
+    "pomegranate": POMEGRANATE_CLASSES,
 }
 running = True
 

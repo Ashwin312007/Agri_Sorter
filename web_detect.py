@@ -26,6 +26,7 @@ from detect import (
     APPLE_CLASSES,
     GUAVA_CLASSES,
     MANGO_CLASSES,
+    POMEGRANATE_CLASSES,
     is_defect,
     letterbox,
     load_names,
@@ -61,6 +62,10 @@ def load_model(fruit_name: str):
         elif fruit_name == "guava":
             m_path = "best_guava.onnx"
             exp = GUAVA_CLASSES
+            c_thresh = 0.15
+        elif fruit_name == "pomegranate":
+            m_path = "best_pomegranate.onnx"
+            exp = POMEGRANATE_CLASSES
             c_thresh = 0.15
         else:
             m_path = "best.onnx"
@@ -265,6 +270,7 @@ class DualStreamHandler(BaseHTTPRequestHandler):
             <button class="btn {'btn-active' if active_fruit == 'mango' else ''}" onclick="switchFruit('mango')">🥭 MANGO</button>
             <button class="btn {'btn-active' if active_fruit == 'apple' else ''}" onclick="switchFruit('apple')">🍎 APPLE</button>
             <button class="btn {'btn-active' if active_fruit == 'guava' else ''}" onclick="switchFruit('guava')">🍈 GUAVA</button>
+            <button class="btn {'btn-active' if active_fruit == 'pomegranate' else ''}" onclick="switchFruit('pomegranate')">🔴 POMEGRANATE</button>
         </div>
 
         <div class="slider-group">
@@ -389,7 +395,7 @@ def main():
 
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--fruit", default="guava", choices=["apple", "mango", "guava"], help="Default active fruit")
+    parser.add_argument("--fruit", default="pomegranate", choices=["apple", "mango", "guava", "pomegranate"], help="Default active fruit")
     args, _ = parser.parse_known_args()
 
     load_model(args.fruit)
