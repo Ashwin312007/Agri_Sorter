@@ -10,34 +10,50 @@ fi
 
 FRUIT="${1:-menu}"
 CONF="${2:-0.15}"
-CAM="${3:-0}"
+CAM="${3:-auto}"
 GPIO_PIN="${4:-17}"
+
+# Read saved camera configuration if present
+if [ -f "cam.conf" ]; then
+  while IFS='=' read -r key value || [ -n "$key" ]; do
+    case "$key" in
+      CAM_INDEX) [ "$CAM" = "auto" ] && CAM="$value" ;;
+      CAM_DEV)   [ "$CAM" = "auto" ] && CAM="$value" ;;
+    esac
+  done < <(grep -v '^#' cam.conf | grep '=')
+fi
 
 if [ "$FRUIT" = "menu" ]; then
   echo "================================================="
   echo "  Raspberry Pi 4 Fruit Damage Sorter Launcher"
   echo "================================================="
-  echo "Select target fruit:"
-  echo "  1) Apple        (best.onnx)"
-  echo "  2) Mango        (best_mango.onnx)"
-  echo "  3) Guava        (best_guava.onnx)"
-  echo "  4) Pomegranate  (best_pomegranate.onnx)"
-  echo "  5) Live Web GUI (Multi-Fruit Dashboard :5000)"
-  echo "  6) Run Pre-flight Environment Check"
+  echo "Current Webcam: $CAM"
+  echo "Select action:"
+  echo "  1) Apple Detector        (best.onnx)"
+  echo "  2) Mango Detector        (best_mango.onnx)"
+  echo "  3) Guava Detector        (best_guava.onnx)"
+  echo "  4) Pomegranate Detector  (best_pomegranate.onnx)"
+  echo "  5) Live Web GUI          (Multi-Fruit Dashboard :5000)"
+  echo "  6) Run Pre-flight Checks (check_env.py)"
+  echo "  7) Find / Configure Cam  (find_cam.sh)"
   echo "================================================="
-  read -rp "Enter choice [1-6]: " choice
+  read -rp "Enter choice [1-7]: " choice
   case "$choice" in
     1) FRUIT="apple"; CONF="0.20" ;;
     2) FRUIT="mango"; CONF="0.10" ;;
     3) FRUIT="guava"; CONF="0.15" ;;
     4) FRUIT="pomegranate"; CONF="0.15" ;;
     5)
-      echo "Launching Web Dashboard on port 5000..."
-      python3 web_detect.py --fruit pomegranate
+      echo "Launching Web Dashboard on port 5000 (Camera: $CAM)..."
+      python3 web_detect.py --fruit pomegranate --cam "$CAM" --no-browser
       exit 0
       ;;
     6)
-      python3 check_env.py
+      python3 check_env.py --cam "$CAM"
+      exit 0
+      ;;
+    7)
+      ./find_cam.sh
       exit 0
       ;;
     *)

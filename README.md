@@ -84,7 +84,7 @@ git checkout rpi4-fruit-detection
 Run the idempotent setup script:
 
 ```bash
-chmod +x setup_pi.sh run_pi.sh
+chmod +x setup_pi.sh run_pi.sh find_cam.sh
 ./setup_pi.sh
 ```
 
@@ -99,7 +99,56 @@ chmod +x setup_pi.sh run_pi.sh
 
 ---
 
-## 5. Step 3: Run Pre-Flight Environment Checks
+## 5. Step 3: USB Webcam Auto-Discovery & Port Configuration (`find_cam.sh`)
+
+Raspberry Pi 4 creates several internal hardware video nodes (`bcm2835-codec`, `bcm2835-isp`, etc.) in addition to your external USB webcam. Furthermore, UVC webcams generate two `/dev/video*` devices (one for video capture and one for metadata).
+
+Use `find_cam.sh` to automatically scan, isolate your physical USB webcam, test frame grab, and save the active port into `cam.conf`:
+
+```bash
+# Run interactive camera discovery & selector:
+./find_cam.sh
+```
+
+### Example Output:
+```text
+=================================================================
+  Raspberry Pi 4 USB Webcam Configuration & Test Tool
+=================================================================
+Scanning available video devices...
+
+Found 1 operational camera(s):
+-----------------------------------------------------------------
+ #  | Device         | USB   | Resolution   | Name
+-----------------------------------------------------------------
+  0 | /dev/video0    | YES   | 640x480 BGR  | USB 2.0 PC Camera [RECOMMENDED]
+-----------------------------------------------------------------
+
+Detected default recommended camera: Index 0 (USB 2.0 PC Camera)
+Enter camera index to use [0]: 0
+[OK] Saved camera configuration to cam.conf
+```
+
+### Useful Camera Commands:
+```bash
+# 1. Just list operational cameras without changing config:
+./find_cam.sh --list
+
+# 2. Automatically pick and save the first working USB webcam:
+./find_cam.sh --auto
+
+# 3. Explicitly set a specific camera index or device path:
+./find_cam.sh --set 0
+./find_cam.sh --set /dev/video2
+
+# 4. Grab and save a test frame snapshot to verify video feed:
+./find_cam.sh --test 0
+```
+> **Auto-Resolution**: Once saved to `cam.conf`, all scripts (`detect.py`, `web_detect.py`, `run_pi.sh`, and `fruit_sorter.service`) automatically use this configured camera without requiring manual port arguments!
+
+---
+
+## 6. Step 4: Run Pre-Flight Environment Checks
 
 Before starting the conveyor, verify all hardware interfaces and models:
 
@@ -138,7 +187,7 @@ Summary: 15/15 checks passed.
 
 ---
 
-## 6. Step 4: Running the Sorter
+## 7. Step 5: Running the Sorter
 
 You have 3 easy ways to run the sorter depending on your operational needs:
 
@@ -146,20 +195,22 @@ You have 3 easy ways to run the sorter depending on your operational needs:
 ```bash
 ./run_pi.sh
 ```
-Presents a simple interactive terminal menu:
+Presents a simple interactive terminal menu with auto-camera detection:
 ```text
 =================================================
   Raspberry Pi 4 Fruit Damage Sorter Launcher
 =================================================
-Select target fruit:
-  1) Apple        (best.onnx)
-  2) Mango        (best_mango.onnx)
-  3) Guava        (best_guava.onnx)
-  4) Pomegranate  (best_pomegranate.onnx)
-  5) Live Web GUI (Multi-Fruit Dashboard :5000)
-  6) Run Pre-flight Environment Check
+Current Webcam: 0
+Select action:
+  1) Apple Detector        (best.onnx)
+  2) Mango Detector        (best_mango.onnx)
+  3) Guava Detector        (best_guava.onnx)
+  4) Pomegranate Detector  (best_pomegranate.onnx)
+  5) Live Web GUI          (Multi-Fruit Dashboard :5000)
+  6) Run Pre-flight Checks (check_env.py)
+  7) Find / Configure Cam  (find_cam.sh)
 =================================================
-Enter choice [1-6]:
+Enter choice [1-7]:
 ```
 
 ---
@@ -168,7 +219,7 @@ Enter choice [1-6]:
 Run headless over SSH without needing a monitor attached to the Pi:
 
 ```bash
-# Pomegranate sorting on camera 0 with GPIO 17 reject actuation:
+# Pomegranate sorting with GPIO 17 reject actuation (uses cam.conf or auto-probed webcam):
 python3 detect.py --fruit pomegranate --conf 0.15 --gpio-pin 17 --headless
 
 # Guava sorting:
@@ -187,7 +238,7 @@ python3 detect.py --fruit apple --conf 0.20 --gpio-pin 17 --headless
 | `--fruit` | `auto` | Target fruit: `apple`, `mango`, `guava`, `pomegranate`, or `auto` |
 | `--model` | `best.onnx` | Custom path to ONNX model (auto-resolved if `--fruit` is set) |
 | `--conf` | `0.25` | Confidence threshold for defect triggers (see table above) |
-| `--cam` | `0` | Camera device index (`/dev/video0`) |
+| `--cam` | `auto` | Camera index (e.g. `0`), path (`/dev/video0`), or `auto` (reads `cam.conf` / probes) |
 | `--gpio-pin` | `None` | BCM GPIO pin number for reject relay/solenoid trigger |
 | `--gpio-pulse`| `0.2` | Actuation pulse duration in seconds |
 | `--headless` | `False` | Run without GUI window (ideal for SSH) |
@@ -200,7 +251,8 @@ python3 detect.py --fruit apple --conf 0.20 --gpio-pin 17 --headless
 Run the web server directly on the Raspberry Pi:
 
 ```bash
-python3 web_detect.py --fruit pomegranate
+# Starts dashboard (auto-detects webcam and avoids opening browser in headless mode):
+python3 web_detect.py --fruit pomegranate --no-browser
 ```
 
 1. Open any web browser on your phone, tablet, or laptop connected to the same Wi-Fi / local network:
@@ -216,7 +268,7 @@ python3 web_detect.py --fruit pomegranate
 
 ---
 
-## 7. Step 5: Autostart on Boot (Systemd Appliance Mode)
+## 8. Step 6: Autostart on Boot (Systemd Appliance Mode)
 
 To make your Raspberry Pi boot up directly as an automated sorting appliance:
 
@@ -249,7 +301,7 @@ sudo systemctl restart fruit_sorter.service
 
 ---
 
-## 8. Performance Benchmarks & Conveyor Timing
+## 9. Performance Benchmarks & Conveyor Timing
 
 ### Benchmarked Throughput on Raspberry Pi 4 (Quad-Core Cortex-A72 @ 1.5GHz)
 - **Inference Latency**: **70 – 75 ms** per frame (using 4 CPU threads and ARM NEON SIMD acceleration).
@@ -266,9 +318,11 @@ $$\text{Delay} = \left(\frac{30}{30} \times 1000\right) - 75 = 925\text{ ms}$$
 
 ---
 
-## 9. Troubleshooting & FAQs
+## 10. Troubleshooting & FAQs
 
 ### Q1: `Camera index 0 failed to grab` or `Camera 0 not available`
+- Run `./find_cam.sh` to automatically scan all `/dev/video*` ports and isolate your USB webcam from the Pi's internal ISP/codec nodes.
+- Save the active camera index: `./find_cam.sh --auto` or `./find_cam.sh --set <index>`.
 - Ensure the USB webcam is plugged into a blue **USB 3.0** port.
 - Check that the device exists: `ls -l /dev/video*`.
 - Check device capabilities: `v4l2-ctl --list-devices`.

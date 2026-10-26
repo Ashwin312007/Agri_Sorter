@@ -32,10 +32,12 @@ ITEMS_TO_COPY = [
     ("detect.py", "detect.py"),
     ("web_detect.py", "web_detect.py"),
     ("check_env.py", "check_env.py"),
+    ("find_cam.py", "find_cam.py"),
 
     # Setup scripts
     ("setup_pi.sh", "setup_pi.sh"),
     ("run_pi.sh", "run_pi.sh"),
+    ("find_cam.sh", "find_cam.sh"),
 
     # Systemd
     ("systemd/fruit_sorter.service", "systemd/fruit_sorter.service"),

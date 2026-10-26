@@ -66,11 +66,20 @@ def load_names(sess, cli_names, expected):
 
 
 def open_cam(idx, w, h):
+    if str(idx).lower() in ("auto", "none", ""):
+        try:
+            from find_cam import resolve_camera_source
+            idx = resolve_camera_source(None)
+        except Exception:
+            idx = 0
+
+    target = int(idx) if isinstance(idx, str) and idx.isdigit() else idx
     api = cv2.CAP_V4L2 if hasattr(cv2, "CAP_V4L2") and os.name == "posix" else (cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY)
-    cap = cv2.VideoCapture(idx, api)
+    cap = cv2.VideoCapture(target, api)
     if not cap.isOpened() and os.name == "nt":
-        cap = cv2.VideoCapture(idx, cv2.CAP_ANY)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        cap = cv2.VideoCapture(target, cv2.CAP_ANY)
+    if os.name == "posix":
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -183,7 +192,7 @@ def main():
     ap.add_argument("--names", default=None, help="class names in model index order, if metadata is missing")
     ap.add_argument("--conf", type=float, default=0.25, help="confidence threshold (set to the Phase 4 value)")
     ap.add_argument("--iou", type=float, default=0.45)
-    ap.add_argument("--cam", type=int, default=0)
+    ap.add_argument("--cam", default="auto", help="camera index (e.g. 0), /dev/video* device path, or 'auto' (checks cam.conf or auto-probes)")
     ap.add_argument("--source", type=str, default=None, help="image path or directory of images for offline test")
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--height", type=int, default=480)

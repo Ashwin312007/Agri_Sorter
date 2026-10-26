@@ -394,20 +394,28 @@ def main():
     global raw_frame_bytes, model_frame_bytes, running
 
     import argparse
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Multi-Fruit Live Dual-Stream Web Dashboard")
     parser.add_argument("--fruit", default="pomegranate", choices=["apple", "mango", "guava", "pomegranate"], help="Default active fruit")
+    parser.add_argument("--cam", default="auto", help="Camera index (e.g. 0), /dev/video* device path, or 'auto' (checks cam.conf or auto-probes)")
+    parser.add_argument("--port", type=int, default=5000, help="Web server port (default 5000)")
+    parser.add_argument("--no-browser", action="store_true", help="Do not attempt to open local web browser")
     args, _ = parser.parse_known_args()
 
     load_model(args.fruit)
 
-    server_thread = Thread(target=start_server, args=(5000,), daemon=True)
+    server_thread = Thread(target=start_server, args=(args.port,), daemon=True)
     server_thread.start()
-    print("Dual-stream server online at http://127.0.0.1:5000")
+    print(f"Dual-stream server online at http://0.0.0.0:{args.port}")
 
-    webbrowser.open("http://127.0.0.1:5000")
+    if not args.no_browser and (os.name == "nt" or os.environ.get("DISPLAY")):
+        try:
+            webbrowser.open(f"http://127.0.0.1:{args.port}")
+        except Exception:
+            pass
 
-    cap = open_cam(0, 640, 480)
+    cap = open_cam(args.cam, 640, 480)
     if cap is None:
+        print(f"[WARN] open_cam failed on source '{args.cam}'. Trying fallback probe...")
         cap = cv2.VideoCapture(0)
 
     frame_no = 0

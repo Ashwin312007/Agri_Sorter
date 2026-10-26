@@ -47,7 +47,7 @@ def report(name, ok, detail=""):
 
 def main():
     ap = argparse.ArgumentParser(description="Raspberry Pi 4 Pre-flight Environment Checks")
-    ap.add_argument("--cam", type=int, default=0, help="Camera device index (default 0)")
+    ap.add_argument("--cam", default="auto", help="Camera index, device path, or 'auto' (default: auto)")
     ap.add_argument("--fruit", choices=["apple", "mango", "guava", "pomegranate", "all"], default="all")
     args = ap.parse_args()
 
@@ -71,22 +71,35 @@ def main():
     py_ver = platform.python_version()
     report("Python 3.11+ Runtime", sys.version_info >= (3, 11), f"v{py_ver}")
 
-    # 4. Camera Device existence
-    dev = f"/dev/video{args.cam}"
+    # 4. Camera Device existence & configuration
+    try:
+        from find_cam import resolve_camera_source, load_saved_cam_config
+        cfg = load_saved_cam_config()
+        cam_target = resolve_camera_source(args.cam)
+        cam_cfg_note = f" (from cam.conf: index {cfg.get('CAM_INDEX')})" if "CAM_INDEX" in cfg and str(args.cam).lower() == "auto" else ""
+    except Exception:
+        cam_target = int(args.cam) if str(args.cam).isdigit() else 0
+        cam_cfg_note = ""
+
+    dev_str = f"/dev/video{cam_target}" if isinstance(cam_target, int) and os.name != "nt" else str(cam_target)
     if os.name != "nt":
-        report(f"Camera Device ({dev})", os.path.exists(dev), dev if os.path.exists(dev) else "not found")
+        report(f"Target Camera Device ({dev_str}){cam_cfg_note}", os.path.exists(dev_str) or isinstance(cam_target, int), dev_str)
         try:
             out = subprocess.run(["v4l2-ctl", "--list-devices"], capture_output=True, text=True, timeout=5)
             report("v4l2-ctl utility", out.returncode == 0, "available")
         except FileNotFoundError:
             report("v4l2-ctl utility", False, "not installed (run setup_pi.sh)")
     else:
-        report("Camera Device (Windows /dev emulation)", True, f"Webcam index {args.cam}")
+        report(f"Target Camera Device{cam_cfg_note}", True, f"Device: {cam_target}")
 
     # 5. OpenCV Frame Grab
     try:
         import cv2
-        cap = cv2.VideoCapture(args.cam, cv2.CAP_V4L2 if os.name != "nt" else cv2.CAP_ANY)
+        target_int = int(cam_target) if isinstance(cam_target, str) and cam_target.isdigit() else cam_target
+        api = cv2.CAP_V4L2 if (os.name != "nt" and hasattr(cv2, "CAP_V4L2")) else (cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY)
+        cap = cv2.VideoCapture(target_int, api)
+        if not cap.isOpened() and os.name == "nt":
+            cap = cv2.VideoCapture(target_int, cv2.CAP_ANY)
         if os.name != "nt":
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -94,7 +107,7 @@ def main():
         opened = cap.isOpened()
         ok, frame = cap.read() if opened else (False, None)
         cap.release()
-        detail = f"{frame.shape[1]}x{frame.shape[0]} BGR" if ok else f"failed to read from cam {args.cam}"
+        detail = f"{frame.shape[1]}x{frame.shape[0]} BGR from {dev_str}" if ok else f"failed to read from {dev_str} (run ./find_cam.sh)"
         report("Camera Stream & Frame Grab", ok, detail)
     except Exception as e:
         report("Camera Stream & Frame Grab", False, str(e)[:150])
