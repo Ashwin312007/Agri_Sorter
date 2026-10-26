@@ -35,9 +35,17 @@ from detect import (
     preprocess,
 )
 
+def make_placeholder_frame(text="INITIALIZING CAMERA..."):
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    img[:] = (35, 30, 30)
+    cv2.putText(img, text, (110, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 220, 255), 2)
+    _, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+    return buf.tobytes()
+
+
 running = True
-raw_frame_bytes = None
-model_frame_bytes = None
+raw_frame_bytes = make_placeholder_frame("INITIALIZING CAMERA STREAM...")
+model_frame_bytes = make_placeholder_frame("LOADING VISION MODEL...")
 frame_lock = Lock()
 
 active_fruit = "mango"
@@ -403,6 +411,23 @@ def main():
 
     load_model(args.fruit)
 
+    print(f"Opening camera source '{args.cam}'...")
+    cap = open_cam(args.cam, 640, 480)
+    if cap is None or not cap.isOpened():
+        print(f"[WARN] open_cam failed on '{args.cam}'. Trying direct fallback...")
+        cap = cv2.VideoCapture(0)
+
+    # Warm-up / prime camera sensor
+    for _ in range(5):
+        ok, frame = cap.read() if cap else (False, None)
+        if ok and frame is not None:
+            _, raw_buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+            raw_frame_bytes = raw_buf.tobytes()
+            model_frame_bytes = raw_frame_bytes
+            print(f"[OK] Camera primed: {frame.shape[1]}x{frame.shape[0]} BGR")
+            break
+        time.sleep(0.05)
+
     server_thread = Thread(target=start_server, args=(args.port,), daemon=True)
     server_thread.start()
     print(f"Dual-stream server online at http://0.0.0.0:{args.port}")
@@ -412,11 +437,6 @@ def main():
             webbrowser.open(f"http://127.0.0.1:{args.port}")
         except Exception:
             pass
-
-    cap = open_cam(args.cam, 640, 480)
-    if cap is None:
-        print(f"[WARN] open_cam failed on source '{args.cam}'. Trying fallback probe...")
-        cap = cv2.VideoCapture(0)
 
     frame_no = 0
     times = deque(maxlen=30)

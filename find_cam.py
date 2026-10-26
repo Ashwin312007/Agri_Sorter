@@ -114,15 +114,14 @@ def probe_single_camera(dev_or_idx, width=640, height=480):
     except ImportError:
         return False, "OpenCV (cv2) not installed", None
 
-    api = cv2.CAP_V4L2 if (os.name == "posix" and hasattr(cv2, "CAP_V4L2")) else (cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY)
+    # On Windows cv2.CAP_ANY opens standard UVC directly without DSHOW backend index mismatch
+    api = cv2.CAP_V4L2 if (os.name == "posix" and hasattr(cv2, "CAP_V4L2")) else cv2.CAP_ANY
     
     # If dev_or_idx is digit string, convert to int
     target = int(dev_or_idx) if isinstance(dev_or_idx, str) and dev_or_idx.isdigit() else dev_or_idx
 
     with suppress_c_stderr():
         cap = cv2.VideoCapture(target, api)
-        if not cap.isOpened() and os.name == "nt":
-            cap = cv2.VideoCapture(target, cv2.CAP_ANY)
 
     if not cap.isOpened():
         return False, "Failed to open video capture", None
@@ -163,6 +162,7 @@ def scan_cameras(max_probe=10):
     else:
         video_devs = [i for i in range(max_probe)]
 
+    consecutive_fails = 0
     for dev in video_devs:
         # Extract index number
         if isinstance(dev, str):
@@ -179,6 +179,7 @@ def scan_cameras(max_probe=10):
 
         ok, detail, test_frame = probe_single_camera(idx if idx is not None else dev_str)
         if ok:
+            consecutive_fails = 0
             found.append({
                 "index": idx if idx is not None else 0,
                 "dev": dev_str,
@@ -187,6 +188,10 @@ def scan_cameras(max_probe=10):
                 "resolution": detail,
                 "frame": test_frame,
             })
+        else:
+            consecutive_fails += 1
+            if os.name == "nt" and consecutive_fails >= 2 and found:
+                break
 
     # Sort USB cameras to the top
     found.sort(key=lambda x: (not x["is_usb"], x["index"]))
@@ -194,13 +199,13 @@ def scan_cameras(max_probe=10):
 
 
 def resolve_camera_source(cam_arg=None, conf_path=CONF_FILE):
-    """Universal camera resolver for detect.py and web_detect.py.
+    """Universal fast camera resolver for detect.py and web_detect.py.
     
     Priority:
     1. cam_arg (if explicitly provided and not None / 'auto')
     2. Environment variable FRUIT_CAM or CAM_INDEX
     3. cam.conf file
-    4. Auto-probing first working webcam
+    4. Fast probe of primary indices (0, 1, 2)
     5. Fallback: 0
     """
     if cam_arg is not None and str(cam_arg).lower() not in ("auto", "none", ""):
@@ -221,11 +226,11 @@ def resolve_camera_source(cam_arg=None, conf_path=CONF_FILE):
     if "CAM_DEV" in cfg and cfg["CAM_DEV"]:
         return cfg["CAM_DEV"]
 
-    # Auto-probe
-    cams = scan_cameras(max_probe=6)
-    if cams:
-        best = cams[0]
-        return best["index"]
+    # Fast probe (avoids multi-second timeouts)
+    for probe_idx in (0, 1, 2):
+        ok, _, _ = probe_single_camera(probe_idx)
+        if ok:
+            return probe_idx
 
     return 0
 

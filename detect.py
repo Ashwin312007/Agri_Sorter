@@ -74,10 +74,8 @@ def open_cam(idx, w, h):
             idx = 0
 
     target = int(idx) if isinstance(idx, str) and idx.isdigit() else idx
-    api = cv2.CAP_V4L2 if hasattr(cv2, "CAP_V4L2") and os.name == "posix" else (cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY)
+    api = cv2.CAP_V4L2 if hasattr(cv2, "CAP_V4L2") and os.name == "posix" else cv2.CAP_ANY
     cap = cv2.VideoCapture(target, api)
-    if not cap.isOpened() and os.name == "nt":
-        cap = cv2.VideoCapture(target, cv2.CAP_ANY)
     if os.name == "posix":
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
