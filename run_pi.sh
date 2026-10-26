@@ -16,11 +16,13 @@ GPIO_PIN="${4:-17}"
 # Read saved camera configuration if present
 if [ -f "cam.conf" ]; then
   while IFS='=' read -r key value || [ -n "$key" ]; do
+    key=$(echo "$key" | tr -d '[:space:]')
+    value=$(echo "$value" | tr -d '[:space:]"')
     case "$key" in
       CAM_INDEX) [ "$CAM" = "auto" ] && CAM="$value" ;;
       CAM_DEV)   [ "$CAM" = "auto" ] && CAM="$value" ;;
     esac
-  done < <(grep -v '^#' cam.conf | grep '=')
+  done < cam.conf
 fi
 
 if [ "$FRUIT" = "menu" ]; then

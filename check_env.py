@@ -61,7 +61,10 @@ def main():
             board = f.read().strip("\x00 \n")
     except OSError:
         board = f"{platform.system()} {platform.machine()}"
-    report("Board Architecture", "Raspberry Pi" in board or "aarch64" in platform.machine() or "x86_64" in platform.machine(), board)
+    is_pi = "Raspberry Pi" in board
+    is_supported = is_pi or platform.machine().lower() in ("aarch64", "arm64", "x86_64", "amd64")
+    board_label = board if is_pi else f"Dev Host ({board})"
+    report("Board Architecture", is_supported, board_label)
 
     # 2. 64-bit OS
     arch = platform.machine()
