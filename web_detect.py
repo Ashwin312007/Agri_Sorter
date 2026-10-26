@@ -405,14 +405,15 @@ def main():
     parser = argparse.ArgumentParser(description="Multi-Fruit Live Dual-Stream Web Dashboard")
     parser.add_argument("--fruit", default="pomegranate", choices=["apple", "mango", "guava", "pomegranate"], help="Default active fruit")
     parser.add_argument("--cam", default="auto", help="Camera index (e.g. 0), /dev/video* device path, or 'auto' (checks cam.conf or auto-probes)")
+    parser.add_argument("--fourcc", default="auto", choices=["auto", "YUYV", "MJPG", "YUY2"], help="Webcam pixel format (default: auto, checks cam.conf / YUYV)")
     parser.add_argument("--port", type=int, default=5000, help="Web server port (default 5000)")
     parser.add_argument("--no-browser", action="store_true", help="Do not attempt to open local web browser")
     args, _ = parser.parse_known_args()
 
     load_model(args.fruit)
 
-    print(f"Opening camera source '{args.cam}'...")
-    cap = open_cam(args.cam, 640, 480)
+    print(f"Opening camera source '{args.cam}' (fourcc={args.fourcc})...")
+    cap = open_cam(args.cam, 640, 480, fourcc=args.fourcc)
     if cap is None or not cap.isOpened():
         print(f"[WARN] open_cam failed on '{args.cam}'. Trying direct fallback...")
         cap = cv2.VideoCapture(0)

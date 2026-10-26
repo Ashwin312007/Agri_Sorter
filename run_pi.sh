@@ -11,6 +11,7 @@ fi
 FRUIT="${1:-menu}"
 CONF="${2:-0.15}"
 CAM="${3:-auto}"
+FOURCC="auto"
 GPIO_PIN="${4:-17}"
 
 # Read saved camera configuration if present
@@ -19,8 +20,9 @@ if [ -f "cam.conf" ]; then
     key=$(echo "$key" | tr -d '[:space:]')
     value=$(echo "$value" | tr -d '[:space:]"')
     case "$key" in
-      CAM_INDEX) [ "$CAM" = "auto" ] && CAM="$value" ;;
-      CAM_DEV)   [ "$CAM" = "auto" ] && CAM="$value" ;;
+      CAM_INDEX)  [ "$CAM" = "auto" ] && CAM="$value" ;;
+      CAM_DEV)    [ "$CAM" = "auto" ] && CAM="$value" ;;
+      CAM_FOURCC) FOURCC="$value" ;;
     esac
   done < cam.conf
 fi
@@ -29,7 +31,7 @@ if [ "$FRUIT" = "menu" ]; then
   echo "================================================="
   echo "  Raspberry Pi 4 Fruit Damage Sorter Launcher"
   echo "================================================="
-  echo "Current Webcam: $CAM"
+  echo "Current Webcam: $CAM (Format: $FOURCC)"
   echo "Select action:"
   echo "  1) Apple Detector        (best.onnx)"
   echo "  2) Mango Detector        (best_mango.onnx)"
@@ -46,8 +48,8 @@ if [ "$FRUIT" = "menu" ]; then
     3) FRUIT="guava"; CONF="0.15" ;;
     4) FRUIT="pomegranate"; CONF="0.15" ;;
     5)
-      echo "Launching Web Dashboard on port 5000 (Camera: $CAM)..."
-      python3 web_detect.py --fruit pomegranate --cam "$CAM" --no-browser
+      echo "Launching Web Dashboard on port 5000 (Camera: $CAM, Format: $FOURCC)..."
+      python3 web_detect.py --fruit pomegranate --cam "$CAM" --fourcc "$FOURCC" --no-browser
       exit 0
       ;;
     6)
@@ -65,11 +67,12 @@ if [ "$FRUIT" = "menu" ]; then
   esac
 fi
 
-echo "Starting detector for: $FRUIT (conf=$CONF, cam=$CAM, gpio=$GPIO_PIN)..."
+echo "Starting detector for: $FRUIT (conf=$CONF, cam=$CAM, fourcc=$FOURCC, gpio=$GPIO_PIN)..."
 python3 detect.py \
   --fruit "$FRUIT" \
   --conf "$CONF" \
   --cam "$CAM" \
+  --fourcc "$FOURCC" \
   --gpio-pin "$GPIO_PIN" \
   --csv detections.csv \
   --headless

@@ -66,7 +66,7 @@ Agri_Sorter/
 - **Raspberry Pi 4 Model B** (2 GB, 4 GB, or 8 GB RAM)
 - **Raspberry Pi OS 64-bit (Debian Bookworm)** on a 16 GB+ MicroSD card (A1/A2 rated)
 - **Power Supply**: Official 5.1V / 3.0A USB-C power supply
-- **USB Webcam**: Standard UVC-compliant USB webcam (Logitech C270/C920, OV5640, or generic 720p/1080p webcam running at 640x480 MJPG) connected to USB 3.0
+- **USB Webcam**: Standard UVC-compliant USB webcam supporting **YUYV** (uncompressed YUV 4:2:2) or **MJPG** pixel formats (e.g. Logitech, OV5640, or generic CMOS USB webcams running at 640x480) connected to USB 3.0
 - **Cooling**: Active fan or aluminum heatsink case (prevents thermal throttling under continuous inference)
 
 ### Optional Sorting Actuator (Relay / Solenoid / Air Flipper)
@@ -126,32 +126,32 @@ chmod +x setup_pi.sh run_pi.sh find_cam.sh
 
 ## 6. Step 3: USB Webcam Auto-Discovery & Port Configuration (`find_cam.sh`)
 
-Raspberry Pi 4 creates several internal hardware video nodes (`bcm2835-codec`, `bcm2835-isp`, etc.) in addition to your external USB webcam. Furthermore, UVC webcams generate two `/dev/video*` devices (one for video capture and one for metadata).
+Raspberry Pi 4 creates several internal hardware video nodes (`bcm2835-codec`, `bcm2835-isp`, etc.) in addition to your external USB webcam. Furthermore, UVC webcams generate two `/dev/video*` devices (one for video capture and one for metadata), and can output either **YUYV** or **MJPG** formats.
 
-Use `find_cam.sh` to automatically scan, isolate your physical USB webcam, test frame grab, and save the active port into `cam.conf`:
+Use `find_cam.sh` to automatically scan, isolate your physical USB webcam, test frame grab with **YUYV/MJPG**, and save the active port into `cam.conf`:
 
 ```bash
-# Run interactive camera discovery & selector:
+# Run interactive camera discovery & selector (defaults to YUYV format):
 ./find_cam.sh
 ```
 
 ### Example Output:
 ```text
 =================================================================
-  Raspberry Pi 4 USB Webcam Configuration & Test Tool
+  Raspberry Pi 4 USB Webcam Configuration & Test Tool (YUYV/MJPG)
 =================================================================
-Scanning available video devices...
+Scanning available video devices (Prioritizing YUYV)...
 
 Found 1 operational camera(s):
------------------------------------------------------------------
- #  | Device         | USB   | Resolution   | Name
------------------------------------------------------------------
-  0 | /dev/video0    | YES   | 640x480 BGR  | USB 2.0 PC Camera [RECOMMENDED]
------------------------------------------------------------------
+--------------------------------------------------------------------
+ #  | Device         | USB   | Format   | Resolution   | Name
+--------------------------------------------------------------------
+  0 | /dev/video0    | YES   | YUYV     | 640x480      | USB 2.0 PC Camera [RECOMMENDED]
+--------------------------------------------------------------------
 
-Detected default recommended camera: Index 0 (USB 2.0 PC Camera)
+Detected default recommended camera: Index 0 (USB 2.0 PC Camera, Format: YUYV)
 Enter camera index to use [0]: 0
-[OK] Saved camera configuration to cam.conf
+[OK] Saved camera configuration to cam.conf (Format: YUYV)
 ```
 
 ### Useful Camera Commands:
@@ -159,17 +159,17 @@ Enter camera index to use [0]: 0
 # 1. Just list operational cameras without changing config:
 ./find_cam.sh --list
 
-# 2. Automatically pick and save the first working USB webcam:
+# 2. Automatically pick and save the first working USB webcam (with YUYV format):
 ./find_cam.sh --auto
 
-# 3. Explicitly set a specific camera index or device path:
-./find_cam.sh --set 0
-./find_cam.sh --set /dev/video2
+# 3. Explicitly set a specific camera index and format:
+./find_cam.sh --set 0 --fourcc YUYV
+./find_cam.sh --set /dev/video2 --fourcc MJPG
 
-# 4. Grab and save a test frame snapshot to verify video feed:
-./find_cam.sh --test 0
+# 4. Grab and save a test frame snapshot to verify live YUYV video feed:
+./find_cam.sh --test 0 --fourcc YUYV
 ```
-> **Auto-Resolution**: Once saved to `cam.conf`, all scripts (`detect.py`, `web_detect.py`, `run_pi.sh`, and `fruit_sorter.service`) automatically use this configured camera without requiring manual port arguments!
+> **Auto-Resolution**: Once saved to `cam.conf`, all scripts (`detect.py`, `web_detect.py`, `run_pi.sh`, and `fruit_sorter.service`) automatically read the configured camera index and **YUYV** pixel format without requiring manual arguments!
 
 ---
 

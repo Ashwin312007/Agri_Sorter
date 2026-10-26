@@ -95,21 +95,15 @@ def main():
     else:
         report(f"Target Camera Device{cam_cfg_note}", True, f"Device: {cam_target}")
 
-    # 5. OpenCV Frame Grab
+    # 5. OpenCV Frame Grab (Supports YUYV and MJPG)
     try:
         import cv2
-        target_int = int(cam_target) if isinstance(cam_target, str) and cam_target.isdigit() else cam_target
-        api = cv2.CAP_V4L2 if (os.name != "nt" and hasattr(cv2, "CAP_V4L2")) else (cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY)
-        cap = cv2.VideoCapture(target_int, api)
-        if not cap.isOpened() and os.name == "nt":
-            cap = cv2.VideoCapture(target_int, cv2.CAP_ANY)
-        if os.name != "nt":
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        opened = cap.isOpened()
+        from detect import open_cam
+        cap = open_cam(cam_target, 640, 480)
+        opened = cap is not None and cap.isOpened()
         ok, frame = cap.read() if opened else (False, None)
-        cap.release()
+        if cap:
+            cap.release()
         detail = f"{frame.shape[1]}x{frame.shape[0]} BGR from {dev_str}" if ok else f"failed to read from {dev_str} (run ./find_cam.sh)"
         report("Camera Stream & Frame Grab", ok, detail)
     except Exception as e:

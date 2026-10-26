@@ -65,7 +65,7 @@ def load_names(sess, cli_names, expected):
     return names
 
 
-def open_cam(idx, w, h):
+def open_cam(idx, w, h, fourcc="auto"):
     if str(idx).lower() in ("auto", "none", ""):
         try:
             from find_cam import resolve_camera_source
@@ -75,12 +75,33 @@ def open_cam(idx, w, h):
 
     target = int(idx) if isinstance(idx, str) and idx.isdigit() else idx
     api = cv2.CAP_V4L2 if hasattr(cv2, "CAP_V4L2") and os.name == "posix" else cv2.CAP_ANY
+
+    resolved_fourcc = fourcc
+    if str(fourcc).lower() in ("auto", "none", ""):
+        try:
+            from find_cam import load_saved_cam_config
+            cfg = load_saved_cam_config()
+            resolved_fourcc = cfg.get("CAM_FOURCC", "YUYV")
+        except Exception:
+            resolved_fourcc = "YUYV"
+
+    fmts = [resolved_fourcc, "YUYV", "MJPG", "YUY2", None] if resolved_fourcc else ["YUYV", "MJPG", None]
+    for fmt in fmts:
+        cap = cv2.VideoCapture(target, api)
+        if not cap.isOpened():
+            continue
+        if fmt and os.name == "posix":
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fmt[:4]))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        ok, frame = cap.read()
+        if ok and frame is not None and frame.size > 0:
+            return cap
+        cap.release()
+
     cap = cv2.VideoCapture(target, api)
-    if os.name == "posix":
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     return cap if cap.isOpened() else None
 
 
@@ -191,6 +212,7 @@ def main():
     ap.add_argument("--conf", type=float, default=0.25, help="confidence threshold (set to the Phase 4 value)")
     ap.add_argument("--iou", type=float, default=0.45)
     ap.add_argument("--cam", default="auto", help="camera index (e.g. 0), /dev/video* device path, or 'auto' (checks cam.conf or auto-probes)")
+    ap.add_argument("--fourcc", default="auto", choices=["auto", "YUYV", "MJPG", "YUY2"], help="webcam pixel format (default: auto, checks cam.conf / YUYV)")
     ap.add_argument("--source", type=str, default=None, help="image path or directory of images for offline test")
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--height", type=int, default=480)
@@ -299,7 +321,7 @@ def main():
     try:
         while running:
             if cap is None:
-                cap = open_cam(args.cam, args.width, args.height)
+                cap = open_cam(args.cam, args.width, args.height, fourcc=args.fourcc)
                 if cap is None:
                     print(f"Camera {args.cam} not available, retrying in 2s...")
                     time.sleep(2)
