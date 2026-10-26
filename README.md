@@ -6,17 +6,19 @@ An autonomous real-time computer vision system built for **Raspberry Pi 4 (64-bi
 
 ## Table of Contents
 1. [Overview & Supported Fruits](#1-overview--supported-fruits)
-2. [Hardware Requirements & Pinout](#2-hardware-requirements--pinout)
-3. [Step 1: Clone Repository & Switch Branch](#3-step-1-clone-repository--switch-branch)
-4. [Step 2: One-Step Automated Setup](#4-step-2-one-step-automated-setup)
-5. [Step 3: Run Pre-Flight Environment Checks](#5-step-3-run-pre-flight-environment-checks)
-6. [Step 4: Running the Sorter](#6-step-4-running-the-sorter)
+2. [Project File Structure](#2-project-file-structure)
+3. [Hardware Requirements & Pinout](#3-hardware-requirements--pinout)
+4. [Step 1: Clone Repository & Switch Branch](#4-step-1-clone-repository--switch-branch)
+5. [Step 2: One-Step Automated Setup (`setup_pi.sh`)](#5-step-2-one-step-automated-setup-setup_pish)
+6. [Step 3: USB Webcam Auto-Discovery & Port Configuration (`find_cam.sh`)](#6-step-3-usb-webcam-auto-discovery--port-configuration-find_camsh)
+7. [Step 4: Run Pre-Flight Environment Checks (`check_env.py`)](#7-step-4-run-pre-flight-environment-checks-check_envpy)
+8. [Step 5: Running the Sorter](#8-step-5-running-the-sorter)
    - [Option A: Interactive Menu Launcher (`./run_pi.sh`)](#option-a-interactive-menu-launcher-run_pish)
    - [Option B: Headless Production CLI with GPIO Actuation (`detect.py`)](#option-b-headless-production-cli-with-gpio-actuation-detectpy)
    - [Option C: Live Dual-Stream Web Dashboard (`web_detect.py`)](#option-c-live-dual-stream-web-dashboard-web_detectpy)
-7. [Step 5: Autostart on Boot (Systemd Appliance Mode)](#7-step-5-autostart-on-boot-systemd-appliance-mode)
-8. [Performance Benchmarks & Conveyor Timing](#8-performance-benchmarks--conveyor-timing)
-9. [Troubleshooting & FAQs](#9-troubleshooting--faqs)
+9. [Step 6: Autostart on Boot (Systemd Appliance Mode)](#9-step-6-autostart-on-boot-systemd-appliance-mode)
+10. [Performance Benchmarks & Conveyor Timing](#10-performance-benchmarks--conveyor-timing)
+11. [Troubleshooting & FAQs](#11-troubleshooting--faqs)
 
 ---
 
@@ -35,7 +37,30 @@ The system classifies every incoming fruit into 4 unified categories and outputs
 
 ---
 
-## 2. Hardware Requirements & Pinout
+## 2. Project File Structure
+
+```text
+Agri_Sorter/
+├── best.onnx                  # Apple defect model (YOLOv5n ONNX, 416x416)
+├── best_mango.onnx            # Mango defect model (YOLOv5n ONNX, 416x416)
+├── best_guava.onnx            # Guava defect model (YOLOv5n ONNX, 416x416)
+├── best_pomegranate.onnx      # Pomegranate defect model (YOLOv5n ONNX, 416x416)
+├── find_cam.sh                # USB webcam discovery & config shell wrapper
+├── find_cam.py                # V4L2 probe, frame grab validation & cam.conf generator
+├── run_pi.sh                  # Interactive terminal launcher menu (all fruits + GUI)
+├── setup_pi.sh                # Automated 1-step Pi environment installer
+├── detect.py                  # Headless production detection & GPIO reject trigger
+├── web_detect.py              # Dual-stream real-time browser dashboard (:5000)
+├── check_env.py               # Pre-flight diagnostic & hardware check suite
+├── package_rpi4.py            # Deployment bundler (generates deploy_rpi4 & zip)
+├── systemd/
+│   └── fruit_sorter.service   # Systemd service for 24/7 appliance autostart
+└── README.md                  # Complete deployment and operating guide
+```
+
+---
+
+## 3. Hardware Requirements & Pinout
 
 ### Required Hardware
 - **Raspberry Pi 4 Model B** (2 GB, 4 GB, or 8 GB RAM)
@@ -57,7 +82,7 @@ Pin 11 (BCM GPIO 17)   -------->  IN (Signal)
 
 ---
 
-## 3. Step 1: Clone Repository & Switch Branch
+## 4. Step 1: Clone Repository & Switch Branch
 
 Open a terminal on your Raspberry Pi (or connect via SSH):
 
@@ -79,7 +104,7 @@ git checkout rpi4-fruit-detection
 
 ---
 
-## 4. Step 2: One-Step Automated Setup
+## 5. Step 2: One-Step Automated Setup (`setup_pi.sh`)
 
 Run the idempotent setup script:
 
@@ -99,7 +124,7 @@ chmod +x setup_pi.sh run_pi.sh find_cam.sh
 
 ---
 
-## 5. Step 3: USB Webcam Auto-Discovery & Port Configuration (`find_cam.sh`)
+## 6. Step 3: USB Webcam Auto-Discovery & Port Configuration (`find_cam.sh`)
 
 Raspberry Pi 4 creates several internal hardware video nodes (`bcm2835-codec`, `bcm2835-isp`, etc.) in addition to your external USB webcam. Furthermore, UVC webcams generate two `/dev/video*` devices (one for video capture and one for metadata).
 
@@ -148,7 +173,7 @@ Enter camera index to use [0]: 0
 
 ---
 
-## 6. Step 4: Run Pre-Flight Environment Checks
+## 7. Step 4: Run Pre-Flight Environment Checks (`check_env.py`)
 
 Before starting the conveyor, verify all hardware interfaces and models:
 
@@ -187,7 +212,7 @@ Summary: 15/15 checks passed.
 
 ---
 
-## 7. Step 5: Running the Sorter
+## 8. Step 5: Running the Sorter
 
 You have 3 easy ways to run the sorter depending on your operational needs:
 
@@ -268,7 +293,7 @@ python3 web_detect.py --fruit pomegranate --no-browser
 
 ---
 
-## 8. Step 6: Autostart on Boot (Systemd Appliance Mode)
+## 9. Step 6: Autostart on Boot (Systemd Appliance Mode)
 
 To make your Raspberry Pi boot up directly as an automated sorting appliance:
 
@@ -301,7 +326,7 @@ sudo systemctl restart fruit_sorter.service
 
 ---
 
-## 9. Performance Benchmarks & Conveyor Timing
+## 10. Performance Benchmarks & Conveyor Timing
 
 ### Benchmarked Throughput on Raspberry Pi 4 (Quad-Core Cortex-A72 @ 1.5GHz)
 - **Inference Latency**: **70 – 75 ms** per frame (using 4 CPU threads and ARM NEON SIMD acceleration).
@@ -318,7 +343,7 @@ $$\text{Delay} = \left(\frac{30}{30} \times 1000\right) - 75 = 925\text{ ms}$$
 
 ---
 
-## 10. Troubleshooting & FAQs
+## 11. Troubleshooting & FAQs
 
 ### Q1: `Camera index 0 failed to grab` or `Camera 0 not available`
 - Run `./find_cam.sh` to automatically scan all `/dev/video*` ports and isolate your USB webcam from the Pi's internal ISP/codec nodes.
