@@ -32,7 +32,6 @@ sudo apt-get install -y \
   python3-gpiozero \
   v4l-utils \
   libcamera-tools \
-  libatlas-base-dev \
   libopenblas-dev
 
 # 3. Virtual Environment Creation

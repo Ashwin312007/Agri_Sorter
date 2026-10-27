@@ -148,7 +148,7 @@ def main():
     # 8. Optional GPIO Actuation
     try:
         import gpiozero
-        report("GPIO Hardware Actuation (gpiozero)", True, f"v{gpiozero.__version__}")
+        report("GPIO Hardware Actuation (gpiozero)", True, f"v{getattr(gpiozero, '__version__', 'installed')}")
     except ImportError:
         try:
             import gpiod

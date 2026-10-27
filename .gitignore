@@ -13,3 +13,4 @@ deploy_rpi4/
 raw_downloads/
 detections.csv
 yolov5/
+cam.conf

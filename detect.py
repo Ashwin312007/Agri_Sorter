@@ -5,7 +5,7 @@ Rule: a class ending in "_fresh" is fresh. Any other detected class above --conf
 
 Examples:
   python3 detect.py --model best.onnx --conf 0.25
-  python3 detect.py --model best.onnx --conf 0.25 --headless --save
+  python3 detect.py --fruit apple --gpio-pin 17 --headless
 """
 import argparse
 import ast
@@ -176,30 +176,54 @@ DEFAULT_FRUIT_MODELS = {
 
 
 class GPIOTrigger:
-    """Non-blocking hardware reject trigger for Raspberry Pi GPIO relays / solenoids."""
-    def __init__(self, pin=None, pulse_s=0.2):
+    """Hardware position controller for Raspberry Pi GPIO servo motor."""
+    def __init__(self, pin=None, fresh_angle=0, default_angle=90):
         self.pin = pin
-        self.pulse_s = pulse_s
+        self.fresh_angle = fresh_angle
+        self.default_angle = default_angle
         self.device = None
+        self.current_angle = None
         if pin is not None:
             try:
-                from gpiozero import OutputDevice
-                self.device = OutputDevice(pin, active_high=True, initial_value=False)
-                print(f"[GPIO] Reject actuator enabled on BCM pin {pin} (gpiozero).")
+                from gpiozero import AngularServo
+                # Standard pulse widths for SG90 / MG90S / MG996R (0.5ms to 2.5ms)
+                self.device = AngularServo(
+                    pin,
+                    min_angle=-90,
+                    max_angle=90,
+                    min_pulse_width=0.0005,
+                    max_pulse_width=0.0025
+                )
+                self.set_angle(self.default_angle)
+                print(f"[GPIO] Servo initialized on BCM pin {pin} (Default: {default_angle}°, Fresh: {fresh_angle}°).")
             except Exception as e:
                 print(f"[GPIO] Hardware actuation unavailable ({e}). Running in logging mode.")
 
+    def set_angle(self, angle):
+        """Updates servo angle only when target state changes to avoid PWM buzzing."""
+        if self.device is not None and self.current_angle != angle:
+            try:
+                self.device.angle = angle
+                self.current_angle = angle
+            except Exception as ex:
+                print(f"[GPIO Warning] Servo actuation error: {ex}")
+
+    def update(self, has_fresh):
+        """Sets servo to 0° if a fresh fruit is present, otherwise holds 90°."""
+        target = self.fresh_angle if has_fresh else self.default_angle
+        self.set_angle(target)
+
     def trigger(self):
+        """Fallback for reject trigger."""
+        self.set_angle(self.default_angle)
+
+    def close(self):
         if self.device is not None:
-            import threading
-            def _pulse():
-                try:
-                    self.device.on()
-                    time.sleep(self.pulse_s)
-                    self.device.off()
-                except Exception as ex:
-                    print(f"[GPIO Warning] Actuation error: {ex}")
-            threading.Thread(target=_pulse, daemon=True).start()
+            try:
+                self.device.detach()
+                self.device.close()
+            except Exception:
+                pass
 
 
 def main():
@@ -218,8 +242,9 @@ def main():
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--imgsz", type=int, default=416)
     ap.add_argument("--threads", type=int, default=4)
-    ap.add_argument("--gpio-pin", type=int, default=None, help="BCM GPIO pin for reject relay/solenoid actuation")
-    ap.add_argument("--gpio-pulse", type=float, default=0.2, help="Pulse duration in seconds for reject trigger")
+    ap.add_argument("--gpio-pin", type=int, default=None, help="BCM GPIO pin for servo motor actuation")
+    ap.add_argument("--servo-fresh", type=int, default=0, help="Servo angle when fresh apple is seen (default: 0)")
+    ap.add_argument("--servo-default", type=int, default=90, help="Servo angle until fresh apple is seen (default: 90)")
     ap.add_argument("--headless", action="store_true", help="never open a window")
     ap.add_argument("--save", action="store_true", help="save annotated REJECT frames to saved/")
     ap.add_argument("--csv", default="detections.csv")
@@ -256,7 +281,11 @@ def main():
                 expected = APPLE_CLASSES
 
     names = load_names(sess, args.names, expected)
-    gpio = GPIOTrigger(args.gpio_pin, args.gpio_pulse)
+    gpio = GPIOTrigger(
+        pin=args.gpio_pin,
+        fresh_angle=args.servo_fresh,
+        default_angle=args.servo_default
+    )
     print(f"Model: {args.model} | classes: {names} | conf={args.conf} iou={args.iou}")
 
     show = (not args.headless) and can_display()
@@ -289,9 +318,11 @@ def main():
             lb, r, pad = letterbox(frame, args.imgsz)
             out = sess.run(None, {inp_name: preprocess(lb)})[0]
             dets = postprocess(out, names, r, pad, frame.shape[:2], args.conf, args.iou)
+
+            has_fresh = any(not is_defect(d["name"]) for d in dets)
+            gpio.update(has_fresh)
+
             verdict = "REJECT" if any(is_defect(d["name"]) for d in dets) else "FRESH"
-            if verdict == "REJECT" and any(is_defect(d["name"]) for d in dets):
-                gpio.trigger()
             ts = datetime.now().isoformat(timespec="milliseconds")
             if dets:
                 for d in dets:
@@ -310,6 +341,7 @@ def main():
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 1)
                 cv2.imwrite(f"saved/{os.path.basename(img_path)}", vis)
         fcsv.close()
+        gpio.close()
         print("Batch processing complete.")
         return
 
@@ -341,9 +373,11 @@ def main():
             out = sess.run(None, {inp_name: preprocess(lb)})[0]
             dets = postprocess(out, names, r, pad, frame.shape[:2], args.conf, args.iou)
 
+            # Continuous gate update: 0° if fresh apple is visible, else 90°
+            has_fresh = any(not is_defect(d["name"]) for d in dets)
+            gpio.update(has_fresh)
+
             verdict = "REJECT" if any(is_defect(d["name"]) for d in dets) else "FRESH"
-            if verdict == "REJECT" and any(is_defect(d["name"]) for d in dets):
-                gpio.trigger()
 
             times.append(time.perf_counter())
             fps = (len(times) - 1) / (times[-1] - times[0]) if len(times) > 1 else 0.0
@@ -364,11 +398,12 @@ def main():
                 cv2.putText(vis, f"{d['name']} {d['conf']:.2f}", (x1, max(y1 - 6, 12)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 1)
             vcol = (0, 0, 255) if verdict == "REJECT" else (0, 200, 0)
-            cv2.putText(vis, f"{verdict}  FPS {fps:.1f}", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, vcol, 2)
+            servo_status = f"SERVO: {gpio.current_angle}°" if gpio.device else ""
+            cv2.putText(vis, f"{verdict}  FPS {fps:.1f}  {servo_status}", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, vcol, 2)
 
             summary = ", ".join(f"{d['name']}:{d['conf']:.2f}" for d in dets) or "-"
-            print(f"[{frame_no}] {verdict:6s} fps={fps:4.1f} {summary}")
+            print(f"[{frame_no}] {verdict:6s} | Servo: {gpio.current_angle}° | fps={fps:4.1f} | {summary}")
 
             if args.save and verdict == "REJECT" and time.time() - last_save > 1.0:
                 cv2.imwrite(f"saved/{datetime.now():%Y%m%d_%H%M%S_%f}_{frame_no}.jpg", vis)
@@ -388,6 +423,7 @@ def main():
         if cap is not None:
             cap.release()
         fcsv.close()
+        gpio.close()
         if show:
             cv2.destroyAllWindows()
         print("Stopped.")
